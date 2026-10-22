@@ -173,9 +173,11 @@ func _test_data_layers() -> void:
 			and bchain[0].id == &"berserk" and bchain[1].id == &"berserk_f2" and bchain[2].id == &"berserk_f3"
 			and bchain[1].unlock_level == 3 and bchain[2].unlock_level == 5,
 			"Цепочка эволюции Берсерки I→II→III (открытие на уровнях 3 и 5)")
-	_check(Classes.is_selectable(&"berserk") and not Classes.is_selectable(&"berserk_f2")
-			and not Classes.is_selectable(&"valkyrie"),
-			"Лобби-валидация: только реализованные базовые классы (формы/заглушки отклоняются)")
+	_check(Classes.is_selectable(&"berserk") and Classes.is_selectable(&"valkyrie")
+			and not Classes.is_selectable(&"berserk_f2") and not Classes.is_selectable(&"valkyrie_f2")
+			and not Classes.is_selectable(&"witch"),
+			"Лобби-валидация: реализованные базы (Берсерка, Валькирия); формы и заглушки отклоняются")
+	_check(Classes.get_all().size() == 2, "В лобби доступны 2 реализованных класса (%d)" % Classes.get_all().size())
 	## 24 визуальных слота: процедурная заглушка строится для каждого определения.
 	var vis_script := load("res://scripts/gameplay/player_visuals.gd")
 	var stub_scene := load("res://tests/assets/stub_model.tscn")
@@ -447,6 +449,8 @@ func _test_full_match_flow() -> void:
 
 	await _test_evolution()
 
+	await _test_valkyrie()
+
 	await _test_progression()
 
 	## --- Нет неограниченного роста объектов: после боя/прогрессии/UI-очистки.
@@ -647,6 +651,252 @@ func _test_evolution() -> void:
 			e.queue_free()
 	pawn.queue_free()
 	sys.states.erase(777)
+	await _frames(3)
+
+# ------------------------------------------------------------------ Валькирия (Этап 3.1)
+
+func _vk_input(move: Vector2 = Vector2.ZERO) -> Dictionary:
+	return {"move": move, "aim_yaw": 0.0, "press_attack": false, "press_dodge": false,
+		"press_skill": false, "press_parry": false}
+
+func _vk_hit(pawn: PlayerPawn, amount: float) -> void:
+	pawn.get_node(^"Hurtbox").receive_hit(
+		Units.make_damage(amount, null, 0, Vector3.FORWARD, 0.0, pawn.global_position))
+
+## Валькирия: детерминированные проверки на пробной пешке (peer 778).
+## Рывок с круговым ударом, парирование (успех/неудача/однократность/cooldown),
+## формы II/III: доп. удар комбо, дальность, фантомы, цепочки, контратака
+## со стаггером, очистка очередей и косметики.
+func _test_valkyrie() -> void:
+	var arena := get_tree().current_scene
+	var sys := _prog()
+	if sys == null or not arena.has_method("spawn_player"):
+		_check(false, "Валькирия: арена и ProgressionSystem доступны")
+		return
+	var pawn: PlayerPawn = arena.spawn_player(778, "Вал-проба", &"valkyrie", Vector3(-15.0, 0.2, -15.0))
+	await _frames(3)
+	if pawn == null or not is_instance_valid(pawn):
+		_check(false, "Валькирия: пробная пешка заспавнена (peer 778)")
+		return
+	var st778 := ProgressionState.new()
+	st778.peer_id = 778
+	sys.states[778] = st778
+	_check(pawn.class_def != null and pawn.class_def.id == &"valkyrie" and pawn.form_index == 0,
+		"Валькирия: пешка стартует с формы I")
+	await _wait_until(func(): return pawn.is_on_floor(), 2.0)
+	await _frames(4)
+	pawn.external_input = _vk_input()
+
+	## --- 1. Рывок: перемещает, НЕ проходит сквозь стену (стена z=-22), cooldown.
+	pawn.global_position = Vector3(0.0, 0.2, -18.5)
+	pawn.rotation.y = 0.0
+	await _frames(2)
+	var dash_pos0 := pawn.global_position
+	pawn.try_skill()
+	_check(pawn.state == PlayerPawn.State.SKILL, "Рывок: серверное состояние SKILL активно")
+	await _seconds(0.45)
+	var dash_moved := pawn.global_position.distance_to(dash_pos0)
+	_check(dash_moved > 1.5 and pawn.global_position.z > -21.7,
+		"Рывок: смещение %.1f м и остановлен стеной (z=%.2f, не прошёл сквозь)" % [dash_moved, pawn.global_position.z])
+	var cd_active := pawn._skill_cd_left > 0.0
+	pawn.try_skill()
+	_check(cd_active and pawn.state != PlayerPawn.State.SKILL, "Рывок: cooldown запрещает повторную активацию")
+
+	## --- 2. Круговой удар: несколько целей, ровно одно попадание, радиус.
+	pawn.global_position = Vector3(-15.0, 0.2, -15.0)
+	pawn.rotation.y = 0.0
+	await _frames(2)
+	var wa := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.5))
+	var wb := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(1.8, 0.0, -1.0))
+	var wc := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -6.5))
+	for f in [wa, wb, wc]:
+		f.apply_external_stun(4.0)
+	pawn._skill_cd_left = 0.0
+	pawn.external_input = _vk_input(Vector2(0.0, -1.0)) ## рывок к -Z
+	pawn.try_skill()
+	await _seconds(0.55)
+	var exp_whirl := 22.0 * 1.1
+	_check(is_equal_approx(60.0 - wa.health.health, exp_whirl) and is_equal_approx(60.0 - wb.health.health, exp_whirl),
+		"Круговой удар поразил обе цели в радиусе РОВНО один раз (−%.1f каждая)" % exp_whirl)
+	_check(is_equal_approx(wc.health.health, wc.health.max_health),
+		"Цель вне радиуса (6.5 м) не задета круговым ударом")
+
+	## --- 3. Парирование: неудачный тайминг — урон полный, бонусов нет.
+	pawn.external_input = _vk_input()
+	pawn._parry_cd_left = 0.0
+	pawn.try_parry()
+	var win_open := pawn._parry_window_until_msec > Time.get_ticks_msec()
+	await _seconds(0.45) ## окно формы I — 0.30 с: истекает
+	var hp_fail0 := pawn.health.health
+	_vk_hit(pawn, 30.0)
+	await _frames(2)
+	_check(win_open and pawn._parries_landed == 0 and is_equal_approx(hp_fail0 - pawn.health.health, 30.0)
+			and pawn._empower_mult == 1.0,
+		"Парирование не удалось (окно истекло): урон полный, бонусов нет")
+
+	## --- 4. Успешное парирование: отмена урона, защита, усиление, контратака.
+	var ctr := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -2.5))
+	ctr.apply_external_stun(4.0)
+	var ctr_hp0: float = ctr.health.health
+	pawn._parry_cd_left = 0.0
+	pawn.try_parry()
+	var hp_ok0 := pawn.health.health
+	_vk_hit(pawn, 30.0)
+	await _frames(2)
+	_check(pawn._parries_landed == 1 and is_equal_approx(pawn.health.health, hp_ok0),
+		"Парирование: урон атаки полностью отменён")
+	_check(is_equal_approx(pawn.health.incoming_damage_multiplier, 0.65),
+		"Парирование: защитный бонус — входящий урон ×0.65")
+	_check(is_equal_approx(pawn.hitbox.damage, 22.0 * 1.7),
+		"Парирование: следующая атака усилена ×1.7 (%.1f)" % pawn.hitbox.damage)
+	_check(is_equal_approx(ctr_hp0 - ctr.health.health, 22.0 * 0.8),
+		"Парирование: контратака поразила врага в радиусе (−%.1f)" % (22.0 * 0.8))
+
+	## --- 5. Повторное попадание: окно израсходовано — бонус НЕ дублируется.
+	_vk_hit(pawn, 20.0)
+	await _frames(2)
+	_check(pawn._parries_landed == 1 and is_equal_approx(pawn.health.health, hp_ok0 - 20.0 * 0.65),
+		"Повторный удар: парирование однократно за активацию, урон снижен только защитным бонусом")
+	pawn.try_parry()
+	_check(pawn._parry_window_until_msec == 0, "Cooldown парирования не открывает окно сразу")
+
+	## --- 6. Усиленный взмах РЕАЛЬНО бьёт ×1.7 и снимается после взмаха.
+	var emp := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.6))
+	emp.apply_external_stun(4.0)
+	pawn.rotation.y = 0.0
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn.try_attack()
+	await _seconds(0.6)
+	_check(is_equal_approx(180.0 - emp.health.health, 22.0 * 1.7) and is_equal_approx(pawn.hitbox.damage, 22.0),
+		"Усиленный взмах нанёс 37.4 и усиление снято после завершения")
+
+	## --- 7. Форма II «Клинковый танец»: сохранение состояния, доп. удар, дальность, окно.
+	var pos_pre := pawn.global_position
+	pawn._skill_cd_left = 2.0
+	pawn.health.take_damage(Units.make_damage(20.0, null, 0, Vector3.ZERO, 0.0, pawn.global_position))
+	var hp_pre := pawn.health.health
+	sys.add_xp(778, 300) ## уровень 3
+	_close_offer(st778)
+	await _frames(2)
+	_check(pawn.form_index == 1 and pawn.class_def.id == &"valkyrie_f2",
+		"Валькирия: серверная эволюция в форму II на уровне 3")
+	_check(pawn.global_position.distance_to(pos_pre) < 0.1 and pawn._skill_cd_left > 1.5
+			and pawn.owner_peer == 778 and is_equal_approx(pawn.health.health, hp_pre + 20.0),
+		"Эволюция Валькирии сохраняет позицию/cooldown/peer, HP не сброшено (дельта максимума долечена)")
+	var hb_shape := pawn.hitbox.get_node(^"CollisionShape3D")
+	_check(hb_shape.scale.x > 1.05 and is_equal_approx(pawn.st["parry_window"], 0.45),
+		"Форма II: дальность атаки увеличена (scale %.2f), окно парирования 0.45 с" % hb_shape.scale.x)
+	var combo_foe := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.4))
+	combo_foe.apply_external_stun(4.0)
+	pawn.rotation.y = 0.0
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn._empower_mult = 1.0
+	pawn.refresh_effective_stats()
+	pawn.try_attack()
+	await _seconds(0.6)
+	_check(is_equal_approx(60.0 - combo_foe.health.health, 25.0 * 2.0),
+		"Форма II: взмах наносит 2 удара (25+25=50), факт %.1f" % (60.0 - combo_foe.health.health))
+
+	## --- 8. Форма III «Багровая богиня».
+	sys.add_xp(778, 450) ## уровни 4 и 5
+	_close_offer(st778)
+	await _frames(2)
+	_check(pawn.form_index == 2 and pawn.class_def.id == &"valkyrie_f3",
+		"Валькирия: форма III «Багровая богиня» на уровне 5")
+
+	## 8a. Зеркальные копии: ровно 2 эхо-удара за взмах, без рекурсии.
+	var ph := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.5))
+	ph.apply_external_stun(6.0)
+	pawn.rotation.y = 0.0
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn.try_attack()
+	await _seconds(1.0)
+	## Ожидание: 29 (осн.) + 29 (доп. удар) + 2×14.5 (копии) = 87.
+	_check(is_equal_approx(180.0 - ph.health.health, 29.0 * 2.0 + 29.0 * 0.5 * 2.0),
+		"Форма III: взмах + доп. удар + РОВНО 2 эха копий (87 урона), факт %.1f" % (180.0 - ph.health.health))
+	_check(pawn._phantom_queue.is_empty(),
+		"Очередь фантомов обработана: копии НЕ порождают новые копии (рекурсии нет)")
+
+	## 8b. Награда за убийство — ровно один раз (даже при нескольких источниках).
+	var st_coins0: int = st778.coins
+	var victim := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.5))
+	victim.apply_external_stun(6.0)
+	sys._register_enemy(victim) ## учёт вклада/наград, как у врагов волны
+	victim.health.take_damage(Units.make_damage(50.0, null, 0, Vector3.ZERO, 0.0, victim.global_position))
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn.try_attack()
+	await _seconds(1.2)
+	_check(victim.health.is_dead and st778.coins - st_coins0 == sys.balance.coins_kill,
+		"Убийство серией ударов/копиями: награда +%d монет РОВНО один раз" % sys.balance.coins_kill)
+
+	## 8c. Цепной удар: переходит на 2 врагов у первичной цели, вне дуги взмаха.
+	## Изоляция проверки: прежние пробные враги уводятся далеко, чтобы в
+	## chain_radius от первичной цели были ТОЛЬКО cq/cr (детерминизм).
+	for f in [wa, wb, wc, ctr, emp, combo_foe, ph, victim]:
+		if f != null and is_instance_valid(f):
+			f.global_position = Vector3(19.0, 0.2, 19.0)
+			if not f.health.is_dead:
+				f.apply_external_stun(6.0)
+	var cp := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.5))
+	var cq := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(3.4, 0.0, -1.5))
+	var cr := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(-3.4, 0.0, -1.5))
+	for f in [cp, cq, cr]:
+		f.apply_external_stun(6.0)
+	pawn.rotation.y = 0.0
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn.try_attack()
+	await _seconds(1.0)
+	var exp_chain := 29.0 * 0.6
+	_check(is_equal_approx(180.0 - cq.health.health, exp_chain) and is_equal_approx(180.0 - cr.health.health, exp_chain),
+		"Цепной удар: 2 цели вне дуги получили по ×0.6 (%.1f) ровно один раз" % exp_chain)
+
+	## 8d. Особая контратака идеального парирования: ×1.4 и стаггер группы.
+	var pctr := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -4.0))
+	pctr.apply_external_stun(0.3)
+	await _seconds(0.35)
+	pawn._parry_cd_left = 0.0
+	pawn.try_parry()
+	_vk_hit(pawn, 10.0)
+	await _frames(2)
+	_check(is_equal_approx(180.0 - pctr.health.health, 29.0 * 1.4) and pctr.state == EnemyBase.State.HITSTUN,
+		"Форма III: контратака парирования ×1.4 (%.1f) со стаггером цели" % (180.0 - pctr.health.health))
+
+	## --- 9. Очистка: смерть гасит очередь фантомов; косметика живёт ограниченно.
+	pawn._attack_cd_left = 0.0
+	pawn.state = PlayerPawn.State.IDLE
+	pawn.try_attack()
+	var queue_scheduled := pawn._phantom_queue.size() > 0
+	pawn.health.take_damage(Units.make_damage(99999.0, null, 0, Vector3.FORWARD, 1.0, pawn.global_position))
+	await _frames(2)
+	_check(queue_scheduled and pawn._phantom_queue.is_empty() and pawn.state == PlayerPawn.State.DOWN,
+		"Смерть пешки очищает очередь фантомов (посмертных эхо-ударов нет)")
+	await _seconds(1.4)
+	_check(get_tree().get_nodes_in_group("phantom_fx").is_empty(),
+		"Косметические зеркальные копии истекают по времени жизни (утечек нет)")
+
+	## --- Уборка пробных сущностей.
+	for e in [wa, wb, wc, ctr, emp, combo_foe, ph, victim, cp, cq, cr, pctr]:
+		if e != null and is_instance_valid(e):
+			e.queue_free()
+	pawn.queue_free()
+	sys.states.erase(778)
 	await _frames(3)
 
 # ------------------------------------------------------------------ прогрессия

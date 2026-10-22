@@ -411,6 +411,38 @@ func set_frenzy(on: bool) -> void:
 			mat.emission_enabled = _orig_emissions[i] != Color.BLACK
 			mat.emission_energy_multiplier = 1.0
 
+## Вращение рывка Валькирии (fx_skill_dash).
+func play_skill_dash() -> void:
+	if _root == null or not is_instance_valid(_root):
+		return
+	if _swing_tween != null and _swing_tween.is_valid():
+		_swing_tween.kill()
+	_swing_tween = create_tween()
+	_swing_tween.tween_property(_root, "rotation:y", _root.rotation.y + TAU, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+## Подсветка стойки парирования (открывается/гаснет локально, косметика).
+func set_guard_tint(on: bool) -> void:
+	for i in _materials.size():
+		var mat := _materials[i]
+		if on:
+			mat.emission_enabled = true
+			mat.emission = Color(0.6, 0.8, 1.0)
+			mat.emission_energy_multiplier = 1.3
+		elif not _frenzy_on:
+			mat.emission = _orig_emissions[i]
+			mat.emission_enabled = _orig_emissions[i] != Color.BLACK
+			mat.emission_energy_multiplier = 1.0
+
+## Короткая вспышка-отдача при успешном парировании.
+func play_parry_success() -> void:
+	if _root == null or not is_instance_valid(_root):
+		return
+	var target_scale := Vector3.ONE * (_def.visual_scale if _def != null else 1.0)
+	var tw := create_tween()
+	tw.tween_property(_root, "scale", target_scale * 1.1, 0.07)
+	tw.tween_property(_root, "scale", target_scale, 0.13)
+	set_guard_tint(false)
+
 ## Замах оружия (вызывается fx_swing RPC на всех пирах).
 func play_swing() -> void:
 	if weapon_pivot == null or not is_instance_valid(weapon_pivot):

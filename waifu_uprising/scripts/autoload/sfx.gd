@@ -74,6 +74,15 @@ func _build_sounds() -> void:
 		_tone(0.7, 120.0, 0.35, 480.0),
 		_noise_burst(0.35, 0.18, 800.0, 3200.0),
 	]))
+	_streams["parry"] = _make(_mix([
+		_tone(0.14, 1500.0, 0.4, 900.0),
+		_noise_burst(0.07, 0.35, 3000.0, 1800.0),
+		_tone(0.22, 700.0, 0.25, 1050.0),
+	]))
+	_streams["chain"] = _make(_mix([
+		_noise_burst(0.1, 0.4, 2600.0, 700.0),
+		_tone(0.12, 880.0, 0.3, 440.0),
+	]))
 	_streams["shockwave"] = _make(_mix([
 		_noise_burst(0.22, 0.6, 400.0, 70.0),
 		_tone(0.24, 95.0, 0.55, 45.0),

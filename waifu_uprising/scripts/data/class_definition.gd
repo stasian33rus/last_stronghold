@@ -77,6 +77,35 @@ enum VisualHair { SHORT = 0, LONG = 1, TWINTAILS = 2, PONYTAIL = 3, BRAID = 4, B
 @export var frenzy_damage_mult: float = 1.0
 @export var frenzy_attack_cd_mult: float = 1.0 ## < 1 — атаки быстрее.
 
+@export_group("Traits: рывок с круговым ударом (Валькирия, канон §6.1)")
+@export var skill_dash_speed: float = 0.0 ## 0 = у класса нет умения рывка.
+@export var skill_dash_duration: float = 0.26
+@export var skill_cooldown: float = 5.0
+@export var skill_whirl_radius: float = 3.0 ## Радиус кругового удара в рывке.
+@export var skill_whirl_damage_mult: float = 1.1 ## Доля урона атаки для кругового удара.
+@export var skill_whirl_knockback: float = 9.0
+
+@export_group("Traits: парирование (Валькирия, канон §6.1)")
+@export var parry_window: float = 0.0 ## 0 = у класса нет парирования. Окно (с) после нажатия.
+@export var parry_cooldown: float = 5.0
+@export var parry_guard_mult: float = 0.65 ## Множитель входящего урона защитного бонуса.
+@export var parry_guard_duration: float = 2.5
+@export var parry_empower_mult: float = 1.7 ## Усиление СЛЕДУЮЩЕЙ ближней атаки.
+@export var parry_counter_radius: float = 3.2 ## Контратака — круговой удар вокруг себя.
+@export var parry_counter_damage_mult: float = 0.8
+@export var parry_counter_knockback: float = 8.0
+@export var parry_counter_stun: float = 0.0 ## Форма III: стаггер всем в радиусе контратаки.
+
+@export_group("Traits: комбо/дальность/цепочки/фантомы")
+@export var combo_extra_strikes: int = 0 ## Форма II Валькирии: доп. активация хитбокса за взмах.
+@export var melee_range_scale: float = 1.0 ## Масштаб зоны ближнего удара (дальность атак).
+@export var chain_targets: int = 0 ## Форма III: цепной удар по N ближайшим к цели врагам; 0 = выкл.
+@export var chain_radius: float = 4.0
+@export_range(0.0, 1.0) var chain_damage_falloff: float = 0.6
+@export var phantom_repeats: int = 0 ## Форма III: зеркальные копии повторяют атаку (серверные эхо-удары).
+@export var phantom_delay: float = 0.22 ## Интервал между повторами копий.
+@export var phantom_damage_mult: float = 0.5
+
 ## --- Визуальный слот формы (изолирован от боевой логики) ---
 @export_group("Visual slot")
 ## Сюда в Godot Inspector назначается сцена импортированной модели (.glb) формы.

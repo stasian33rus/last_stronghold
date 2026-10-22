@@ -7,7 +7,7 @@ extends CharacterBody3D
 ##  - состояние репликуется BodySync-снапшотами и интерполируется на клиентах.
 ## Offline (одиночная игра без пира) работает по той же серверной ветке.
 
-enum State { IDLE = 0, RUN = 1, ATTACK = 2, DODGE = 3, DOWN = 4 }
+enum State { IDLE = 0, RUN = 1, ATTACK = 2, DODGE = 3, DOWN = 4, SKILL = 5 }
 
 const GRAVITY: float = 24.0
 const AIM_PLANE_Y: float = 1.0
@@ -33,6 +33,21 @@ var form_index: int = 0
 var _combo_hits: int = 0
 var _frenzy_active: bool = false
 
+## Валькирия (Этап 3.1) — серверные состояния умения/парирования/фантомов.
+var _skill_cd_left: float = 0.0
+var _skill_dir := Vector3.ZERO
+var _skill_hit_done := false
+var _parry_cd_left: float = 0.0
+var _parry_window_until_msec: int = 0
+var _parry_guard_until_msec: int = 0
+var _parries_landed: int = 0 ## счётчик успешных парирований (тесты/HUD)
+var _empower_mult: float = 1.0 ## усиление следующей ближней атаки (после парирования)
+var _extra_strike_done := false
+var _chain_done_this_swing := false
+## Очередь эхо-ударов «зеркальных копий» (форма III): серверные таймеры,
+## каждый — ОДИН радиальный проход; урон копий НЕ порождает новые копии.
+var _phantom_queue: Array = []
+
 ## Внешний источник ввода (автотесты / будущие AI-напарники). Если задан — заменяет Input.
 var external_input: Variant = null
 
@@ -55,6 +70,8 @@ var _attack_cd_left: float = 0.0
 var _dodge_cd_left: float = 0.0
 var _respawn_left: float = 0.0
 var _prev_attack_pressed := false
+var _prev_skill_pressed := false
+var _prev_parry_pressed := false
 
 @onready var health: HealthComponent = $Health
 @onready var hitbox: HitboxComponent = $Hitbox
@@ -134,6 +151,32 @@ func _build_base_stats() -> void:
 		"frenzy_hp_threshold": d.frenzy_hp_threshold,
 		"frenzy_damage_mult": d.frenzy_damage_mult,
 		"frenzy_attack_cd_mult": d.frenzy_attack_cd_mult,
+		## Валькирия: рывок с круговым ударом (умение).
+		"skill_dash_speed": d.skill_dash_speed,
+		"skill_dash_duration": d.skill_dash_duration,
+		"skill_cooldown": d.skill_cooldown,
+		"skill_whirl_radius": d.skill_whirl_radius,
+		"skill_whirl_damage_mult": d.skill_whirl_damage_mult,
+		"skill_whirl_knockback": d.skill_whirl_knockback,
+		## Валькирия: парирование.
+		"parry_window": d.parry_window,
+		"parry_cooldown": d.parry_cooldown,
+		"parry_guard_mult": d.parry_guard_mult,
+		"parry_guard_duration": d.parry_guard_duration,
+		"parry_empower_mult": d.parry_empower_mult,
+		"parry_counter_radius": d.parry_counter_radius,
+		"parry_counter_damage_mult": d.parry_counter_damage_mult,
+		"parry_counter_knockback": d.parry_counter_knockback,
+		"parry_counter_stun": d.parry_counter_stun,
+		## Комбо/дальность/цепочки/фантомы.
+		"combo_extra_strikes": d.combo_extra_strikes,
+		"melee_range_scale": d.melee_range_scale,
+		"chain_targets": d.chain_targets,
+		"chain_radius": d.chain_radius,
+		"chain_damage_falloff": d.chain_damage_falloff,
+		"phantom_repeats": d.phantom_repeats,
+		"phantom_delay": d.phantom_delay,
+		"phantom_damage_mult": d.phantom_damage_mult,
 	}
 
 ## Сервер применяет прогрессию (улучшения + баффы магазина).
@@ -168,14 +211,18 @@ func refresh_effective_stats() -> void:
 	health.max_health = st["max_health"]
 	if health.max_health > prev_max and not health.is_dead:
 		health.health = minf(health.max_health, health.health + (health.max_health - prev_max))
-	health.incoming_damage_multiplier = float(m.get("damage_taken_mult", 1.0))
-	hitbox.damage = st["attack_damage"]
+	## Защитный бонус парирования множится поверх прогрессии (пока активен).
+	var guard_mult := float(st["parry_guard_mult"]) if _parry_guard_active() else 1.0
+	health.incoming_damage_multiplier = float(m.get("damage_taken_mult", 1.0)) * guard_mult
+	## Усиленная следующая атака (парирование) — до первого завершённого взмаха.
+	hitbox.damage = st["attack_damage"] * _empower_mult
 	hitbox.knockback_force = st["attack_knockback"]
 	hitbox.execute_threshold = float(st["execute_threshold"])
 	hitbox.execute_mult = float(st["execute_damage_mult"])
 	var hb_shape := hitbox.get_node_or_null(^"CollisionShape3D")
 	if hb_shape != null:
-		hb_shape.scale = _hitbox_base_scale * clampf(float(m.get("range_mult", 1.0)), 0.5, 2.0)
+		var total_range := float(m.get("range_mult", 1.0)) * float(st["melee_range_scale"])
+		hb_shape.scale = _hitbox_base_scale * clampf(total_range, 0.5, 2.2)
 
 func effective_max_health() -> float:
 	if st.has("max_health"):
@@ -287,6 +334,8 @@ func _sample_input() -> Dictionary:
 		"aim_yaw": aim_yaw,
 		"press_attack": false,
 		"press_dodge": false,
+		"press_skill": false,
+		"press_parry": false,
 	}
 	if external_input != null:
 		var e: Dictionary = external_input
@@ -294,6 +343,8 @@ func _sample_input() -> Dictionary:
 		result["aim_yaw"] = float(e.get("aim_yaw", aim_yaw))
 		result["press_attack"] = bool(e.get("press_attack", false))
 		result["press_dodge"] = bool(e.get("press_dodge", false))
+		result["press_skill"] = bool(e.get("press_skill", false))
+		result["press_parry"] = bool(e.get("press_parry", false))
 		return result
 	var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var cam_yaw := 0.0
@@ -306,6 +357,8 @@ func _sample_input() -> Dictionary:
 	result["aim_yaw"] = _mouse_aim_yaw()
 	result["press_attack"] = Input.is_action_pressed("attack")
 	result["press_dodge"] = Input.is_action_just_pressed("dodge")
+	result["press_skill"] = Input.is_action_just_pressed("skill")
+	result["press_parry"] = Input.is_action_just_pressed("parry")
 	return result
 
 func _mouse_aim_yaw() -> float:
@@ -336,7 +389,15 @@ func _client_send_input() -> void:
 		sv_request_action.rpc_id(1, "attack")
 	if s["press_dodge"]:
 		sv_request_action.rpc_id(1, "dodge")
+	var skill_pressed: bool = s["press_skill"]
+	if skill_pressed and not _prev_skill_pressed:
+		sv_request_action.rpc_id(1, "skill")
+	var parry_pressed: bool = s["press_parry"]
+	if parry_pressed and not _prev_parry_pressed:
+		sv_request_action.rpc_id(1, "parry")
 	_prev_attack_pressed = attack_pressed
+	_prev_skill_pressed = skill_pressed
+	_prev_parry_pressed = parry_pressed
 
 func _consume_local_input() -> void:
 	var s := _sample_input()
@@ -347,7 +408,15 @@ func _consume_local_input() -> void:
 		try_attack()
 	if s["press_dodge"]:
 		try_dodge()
+	var skill_pressed: bool = s["press_skill"]
+	if skill_pressed and not _prev_skill_pressed:
+		try_skill()
+	var parry_pressed: bool = s["press_parry"]
+	if parry_pressed and not _prev_parry_pressed:
+		try_parry()
 	_prev_attack_pressed = attack_pressed
+	_prev_skill_pressed = skill_pressed
+	_prev_parry_pressed = parry_pressed
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func sv_input(seq: int, move: Vector2, aim: float) -> void:
@@ -379,27 +448,39 @@ func sv_request_action(action: String) -> void:
 			try_attack()
 		"dodge":
 			try_dodge()
+		"skill":
+			try_skill()
+		"parry":
+			try_parry()
 
 # ------------------------------------------------------------------ серверная симуляция
 
 func try_attack() -> void:
 	if not Net.is_server() or class_def == null:
 		return
-	if state == State.DOWN or state == State.ATTACK or state == State.DODGE:
+	if state == State.DOWN or state == State.ATTACK or state == State.DODGE or state == State.SKILL:
 		return
 	if _attack_cd_left > 0.0:
 		return
 	state = State.ATTACK
 	_state_time = 0.0
 	_attack_phase = 0
+	_extra_strike_done = false
+	_chain_done_this_swing = false
 	attack_id += 1
 	_attack_cd_left = float(st["attack_windup"]) + float(st["attack_active"]) + float(st["attack_recover"]) + float(st["attack_cooldown"])
+	## Зеркальные копии (форма III Валькирии) повторяют взмах: серверная очередь
+	## эхо-ударов с ЗАФИКСИРОВАННЫМ сейчас уроном (включая усиление парирования).
+	if int(st.get("phantom_repeats", 0)) > 0:
+		_schedule_phantoms(2.8 * float(st.get("melee_range_scale", 1.0)),
+			float(st["attack_damage"]) * _empower_mult * float(st["phantom_damage_mult"]),
+			float(st["attack_knockback"]) * 0.5)
 	fx_swing.rpc()
 
 func try_dodge() -> void:
 	if not Net.is_server() or class_def == null:
 		return
-	if state == State.DOWN or state == State.DODGE or state == State.ATTACK:
+	if state == State.DOWN or state == State.DODGE or state == State.ATTACK or state == State.SKILL:
 		return
 	if _dodge_cd_left > 0.0:
 		return
@@ -415,10 +496,178 @@ func try_dodge() -> void:
 	kb.cancel()
 	health.grant_invulnerability(st["dodge_iframes"])
 
+# ------------------------------------------------------------------ умение Валькирии (Этап 3.1)
+
+## Рывок с круговым ударом (канон §6.1): направленный рывок (движение = физика
+## move_and_slide — сквозь стены не проходит), в середине рывка — ОДИН
+## радиальный проход урона вокруг пешки (каждая цель поражается не более
+## одного раза за активацию). Параметры — данные класса.
+func try_skill() -> void:
+	if not Net.is_server() or class_def == null or not is_inside_tree():
+		return
+	if float(st.get("skill_dash_speed", 0.0)) <= 0.0:
+		return ## у класса нет умения рывка
+	if state == State.DOWN or state == State.ATTACK or state == State.DODGE or state == State.SKILL:
+		return
+	if _skill_cd_left > 0.0:
+		return
+	var move: Vector2 = _latest_input["move"]
+	var dir := Vector3(move.x, 0.0, move.y)
+	if dir.length_squared() < 0.01:
+		dir = -global_transform.basis.z ## без движения — рывок по направлению взгляда
+	_skill_dir = dir.normalized()
+	_skill_hit_done = false
+	state = State.SKILL
+	_state_time = 0.0
+	_skill_cd_left = float(st["skill_cooldown"])
+	kb.cancel()
+	fx_skill_dash.rpc()
+
+func _advance_skill() -> void:
+	var dur := float(st["skill_dash_duration"])
+	if not _skill_hit_done and _state_time >= dur * 0.5:
+		_skill_hit_done = true
+		var amount := float(st["attack_damage"]) * float(st["skill_whirl_damage_mult"])
+		_server_shockwave(float(st["skill_whirl_radius"]), amount, float(st["skill_whirl_knockback"]))
+		fx_skill.rpc()
+		## Копии формы III повторяют и круговой удар.
+		if int(st.get("phantom_repeats", 0)) > 0:
+			_schedule_phantoms(float(st["skill_whirl_radius"]),
+				amount * float(st["phantom_damage_mult"]),
+				float(st["skill_whirl_knockback"]) * 0.5)
+	if _state_time >= dur:
+		state = State.IDLE
+		_state_time = 0.0
+
+# ------------------------------------------------------------------ парирование (Этап 3.1)
+
+## Открыть окно парирования (короткое; успех — только если вражеская атака
+## пришлась ВНУТРИ окна). Cooldown ограничивает спам; состояние атаки/рывка
+## запрещает стойку. Сервер-авторитетно: клиент лишь просит (sv_request_action).
+func try_parry() -> void:
+	if not Net.is_server() or class_def == null or not is_inside_tree():
+		return
+	if float(st.get("parry_window", 0.0)) <= 0.0:
+		return ## у класса нет парирования
+	if state == State.DOWN or state == State.ATTACK or state == State.SKILL:
+		return
+	if _parry_cd_left > 0.0:
+		return
+	_parry_cd_left = float(st["parry_cooldown"])
+	_parry_window_until_msec = Time.get_ticks_msec() + int(float(st["parry_window"]) * 1000.0)
+	fx_parry.rpc()
+
+func _parry_guard_active() -> bool:
+	return _parry_guard_until_msec > 0 and Time.get_ticks_msec() < _parry_guard_until_msec
+
+## Вызывается HurtboxComponent/снарядом ДО нанесения урона (только сервер).
+## Возврат true = атака полностью отменена парированием. Окно расходуется
+## РОВНО один раз: повторные попадания той же или других атак бонус не дублируют.
+func try_parry_hit(_damage: Dictionary) -> bool:
+	if not Net.is_server():
+		return false
+	if _parry_window_until_msec <= 0 or Time.get_ticks_msec() > _parry_window_until_msec:
+		return false ## окно не открывали или оно истекло — урон идёт штатно
+	_parry_window_until_msec = 0 ## окно израсходовано (однократность)
+	_parries_landed += 1
+	## 1) Защитный бонус: входящий урон снижен на короткое время.
+	_parry_guard_until_msec = Time.get_ticks_msec() + int(float(st["parry_guard_duration"]) * 1000.0)
+	refresh_effective_stats() ## применит parry_guard_mult к incoming_damage_multiplier
+	## 2) Следующая ближняя атака усилена (снимется после первого взмаха).
+	_empower_mult = float(st["parry_empower_mult"])
+	hitbox.damage = float(st["attack_damage"]) * _empower_mult
+	## 3) Контратака: круговой удар вокруг себя (форма III — со стаггером группы).
+	_parry_counter()
+	fx_parry_success.rpc()
+	return true
+
+func _parry_counter() -> void:
+	if not is_inside_tree():
+		return
+	var radius := float(st["parry_counter_radius"])
+	var amount := float(st["attack_damage"]) * float(st["parry_counter_damage_mult"])
+	var kb_force := float(st["parry_counter_knockback"])
+	var stun := float(st["parry_counter_stun"])
+	for node in get_tree().get_nodes_in_group("enemy_units"):
+		var foe := node as EnemyBase
+		if foe == null or not is_instance_valid(foe) or foe.health.is_dead:
+			continue
+		var to_t := foe.global_position - global_position
+		to_t.y = 0.0
+		if to_t.length() > radius:
+			continue
+		var dir := to_t.normalized() if to_t.length_squared() > 0.001 else -global_transform.basis.z
+		var dmg := Units.make_damage(amount, self, owner_peer, dir, kb_force, foe.global_position)
+		## take_damage эмитит damage_taken — kb/hitstun/эффекты враг обрабатывает
+		## штатно (EnemyBase._on_damaged); прямой вызов on_damage_received не нужен.
+		if foe.health.take_damage(dmg) and stun > 0.0:
+			foe.apply_external_stun(stun)
+
+## Зеркальные копии (форма III): серверные отложенные эхо-удары. Лимит очереди
+## защищает от накопления при быстрых активациях; урон копий не вызывает
+## on_hit_landed и НЕ порождает новые копии/цепочки (рекурсия исключена).
+func _schedule_phantoms(radius: float, amount: float, kb_force: float) -> void:
+	var n := int(st.get("phantom_repeats", 0))
+	if n <= 0 or amount <= 0.0:
+		return
+	var delay := float(st.get("phantom_delay", 0.22))
+	for i in n:
+		if _phantom_queue.size() >= 4:
+			break ## жёсткий лимит одновременных эффектов
+		_phantom_queue.append({"t": delay * float(i + 1), "radius": radius, "amount": amount, "kb": kb_force})
+
+func _process_phantoms(delta: float) -> void:
+	if _phantom_queue.is_empty():
+		return
+	for i in range(_phantom_queue.size() - 1, -1, -1):
+		var ph: Dictionary = _phantom_queue[i]
+		ph["t"] = float(ph["t"]) - delta
+		if float(ph["t"]) <= 0.0:
+			_phantom_queue.remove_at(i)
+			_server_shockwave(float(ph["radius"]), float(ph["amount"]), float(ph["kb"]))
+			fx_phantom.rpc()
+
+## Цепной удар «Багровой богини»: первый подтверждённый удар взмаха переходит
+## на N ближайших врагов в радиусе от ПЕРВИЧНОЙ цели (вне дуги взмаха).
+func _do_chain_attack(primary: Node, base_amount: float) -> void:
+	if not Net.is_server() or not is_inside_tree() or base_amount <= 0.0:
+		return
+	var amount := base_amount * float(st["chain_damage_falloff"])
+	var origin: Vector3 = global_position
+	if primary is Node3D:
+		origin = (primary as Node3D).global_position
+	var candidates: Array = []
+	for node in get_tree().get_nodes_in_group("enemy_units"):
+		var foe := node as EnemyBase
+		if foe == null or foe == primary or not is_instance_valid(foe) or foe.health.is_dead:
+			continue
+		var d := foe.global_position.distance_to(origin)
+		if d <= float(st["chain_radius"]):
+			candidates.append([d, foe])
+	candidates.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
+	var hit_any := false
+	for i in mini(int(st["chain_targets"]), candidates.size()):
+		var foe: EnemyBase = candidates[i][1]
+		var to_t := foe.global_position - origin
+		to_t.y = 0.0
+		var dir := to_t.normalized() if to_t.length_squared() > 0.001 else Vector3.FORWARD
+		var dmg := Units.make_damage(amount, self, owner_peer, dir, float(st["attack_knockback"]) * 0.5, foe.global_position)
+		if foe.health.take_damage(dmg):
+			hit_any = true
+	if hit_any:
+		fx_chain.rpc()
+
 func _server_sim(delta: float) -> void:
 	_attack_cd_left = maxf(0.0, _attack_cd_left - delta)
 	_dodge_cd_left = maxf(0.0, _dodge_cd_left - delta)
+	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
+	_parry_cd_left = maxf(0.0, _parry_cd_left - delta)
 	_state_time += delta
+	## Истечение защитного бонуса парирования — однократный пересчёт статов.
+	if _parry_guard_until_msec > 0 and Time.get_ticks_msec() >= _parry_guard_until_msec:
+		_parry_guard_until_msec = 0
+		refresh_effective_stats()
+	_process_phantoms(delta)
 
 	if state == State.DOWN:
 		_respawn_left -= delta
@@ -454,11 +703,18 @@ func _server_sim(delta: float) -> void:
 			if _dodge_time_left <= 0.0:
 				state = State.IDLE
 			desired = Vector3.ZERO
+		State.SKILL:
+			_advance_skill()
+			desired = Vector3.ZERO
 		_:
 			pass
 
 	if state == State.DODGE:
 		_ctrl_vel = _dodge_dir * float(st["dodge_speed"])
+	elif state == State.SKILL:
+		## Рывок умения: движение через move_and_slide — столкновения со
+		## стенами/колоннами обрабатываются физикой (сквозь геометрию не проходит).
+		_ctrl_vel = _skill_dir * float(st["skill_dash_speed"])
 	else:
 		desired *= speed * (1.0 - control_lock)
 		_ctrl_vel.x = move_toward(_ctrl_vel.x, desired.x, float(st["acceleration"]) * delta)
@@ -488,10 +744,21 @@ func _advance_attack(_delta: float) -> void:
 	if _attack_phase == 1 and _state_time >= windup + active:
 		_attack_phase = 2
 		hitbox.deactivate()
+	## «Клинковый танец» (форма II): дополнительный удар комбо — короткая
+	## повторная активация хитбокса в восстановлении (hit_once_per_activation
+	## сбрасывается на каждую активацию — та же цель может получить оба удара).
+	if _attack_phase == 2 and not _extra_strike_done and int(st.get("combo_extra_strikes", 0)) > 0 \
+			and _state_time >= windup + active + 0.10 and _state_time < windup + active + recover:
+		_extra_strike_done = true
+		hitbox.activate(minf(0.12, maxf(0.08, recover * 0.5)))
 	if _state_time >= windup + active + recover:
 		state = State.IDLE
 		_state_time = 0.0
 		hitbox.deactivate()
+		## Усиление парирования живёт ровно один взмах.
+		if _empower_mult != 1.0:
+			_empower_mult = 1.0
+			hitbox.damage = float(st["attack_damage"])
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
@@ -512,6 +779,11 @@ func on_hit_landed(target: Node, dmg: Dictionary) -> void:
 			if _lifesteal > 0.0:
 				health.heal(effective_max_health() * _lifesteal)
 	Events.server_hit_landed.emit(self, target, dmg)
+	## Цепной удар «Багровой богини»: один раз за взмах, от первичной цели.
+	## Урон цепочки НЕ вызывает on_hit_landed — рекурсия и дубли наград исключены.
+	if state == State.ATTACK and not _chain_done_this_swing and int(st.get("chain_targets", 0)) > 0:
+		_chain_done_this_swing = true
+		_do_chain_attack(target, float(dmg.get("amount", 0.0)))
 	## Комбо-трейт формы II+: каждый N-й подтверждённый удар — ударная волна.
 	var every := int(st.get("shockwave_every_n_hits", 0))
 	if every > 0 and is_inside_tree():
@@ -534,6 +806,12 @@ func _on_died(dmg: Dictionary) -> void:
 	_respawn_left = st["respawn_time"]
 	hitbox.deactivate()
 	kb.cancel()
+	## Смерть гасит активные эффекты класса: окно/бонус парирования, усиление,
+	## очередь фантомов (никаких «посмертных» эхо-ударов).
+	_parry_window_until_msec = 0
+	_parry_guard_until_msec = 0
+	_empower_mult = 1.0
+	_phantom_queue.clear()
 	kb.apply(dmg.get("knockback_dir", Vector3.FORWARD), 4.0, 1.0)
 	get_tree().call_group(&"match_controller", "register_down", owner_peer)
 	fx_down.rpc()
@@ -647,3 +925,47 @@ func fx_evolve(form_name: String) -> void:
 func fx_shockwave(radius: float) -> void:
 	VisualFx.ring_burst(global_position, Color(1.0, 0.45, 0.3), clampf(radius * 0.8, 2.0, 6.0))
 	Sfx.play("shockwave", -6.0)
+
+## --- Косметика Валькирии (Этап 3.1): локально на каждом пире, без авторитета.
+
+@rpc("authority", "call_local", "unreliable")
+func fx_skill_dash() -> void:
+	if visuals.has_method("play_skill_dash"):
+		visuals.play_skill_dash()
+	Sfx.play("swing", -6.0, 1.3)
+
+@rpc("authority", "call_local", "unreliable")
+func fx_skill() -> void:
+	VisualFx.ring_burst(global_position, Color(0.65, 0.8, 1.0), clampf(float(st.get("skill_whirl_radius", 3.0)) * 0.9, 2.0, 5.0))
+	Sfx.play("shockwave", -8.0, 1.35)
+
+@rpc("authority", "call_local", "unreliable")
+func fx_parry() -> void:
+	if visuals.has_method("set_guard_tint"):
+		visuals.set_guard_tint(true)
+	Sfx.play("ui", -10.0, 0.6)
+	## Авто-снятие подсветки стойки, если окно истекло без успеха (косметика).
+	var wait := float(st.get("parry_window", 0.3)) + 0.08
+	get_tree().create_timer(wait).timeout.connect(func() -> void:
+		if is_instance_valid(self) and is_inside_tree() and _parry_window_until_msec == 0:
+			if visuals != null and visuals.has_method("set_guard_tint"):
+				visuals.set_guard_tint(false))
+
+@rpc("authority", "call_local", "reliable")
+func fx_parry_success() -> void:
+	VisualFx.ring_burst(global_position, Color(1.0, 0.95, 0.55), 3.5)
+	Sfx.play("parry", -2.0)
+	if visuals.has_method("play_parry_success"):
+		visuals.play_parry_success()
+	if is_local_pawn():
+		Events.local_announcement.emit("Парирование! Следующая атака усилена", 1.2)
+
+@rpc("authority", "call_local", "unreliable")
+func fx_phantom() -> void:
+	VisualFx.phantom_slash(self, Color(0.9, 0.2, 0.35))
+	Sfx.play("swing", -12.0, 0.7)
+
+@rpc("authority", "call_local", "unreliable")
+func fx_chain() -> void:
+	VisualFx.ring_burst(global_position, Color(1.0, 0.35, 0.45), 2.4)
+	Sfx.play("chain", -8.0)

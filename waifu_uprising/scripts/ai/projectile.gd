@@ -47,6 +47,11 @@ func _physics_process(delta: float) -> void:
 func _hit_hero(unit: Node3D, health_comp: HealthComponent) -> void:
 	## attacker_peer = 0: урон NPC не приписывается игрокам (статистика/награды).
 	var dmg := Units.make_damage(damage, null, 0, direction, knockback, global_position)
+	## Парирование снаряда (Этап 3.1): тот же серверный хук, что и у ближних
+	## атак; успех — снаряд исчезает, урон не применяется.
+	if unit.has_method("try_parry_hit") and unit.call("try_parry_hit", dmg):
+		expire_now()
+		return
 	if health_comp.take_damage(dmg):
 		if unit.has_method("on_damage_received"):
 			unit.call("on_damage_received", dmg)

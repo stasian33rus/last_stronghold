@@ -29,6 +29,49 @@ static func damage_number(world_pos: Vector3, amount: float, color: Color) -> vo
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.25)
 	tween.chain().tween_callback(label.queue_free)
 
+## Зеркальные копии «Багровой богини»: 2 полупрозрачных силуэта повторяют
+## взмах (чисто локальная косметика — урон/цели считает сервер). Короткое
+## время жизни, автоочистка tween-ом; группа "phantom_fx" для тестов уборки.
+static func phantom_slash(unit: Node, color: Color) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.current_scene == null:
+		return
+	var n3 := unit as Node3D
+	if n3 == null:
+		return
+	for i in 2:
+		var ghost := Node3D.new()
+		ghost.add_to_group("phantom_fx")
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(color.r, color.g, color.b, 0.32)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = 1.1
+		var body := MeshInstance3D.new()
+		var cap := CapsuleMesh.new()
+		cap.radius = 0.26
+		cap.height = 1.4
+		body.mesh = cap
+		body.material_override = mat
+		body.position = Vector3(0.0, 0.9, 0.0)
+		ghost.add_child(body)
+		var blade := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.06, 0.02, 1.0)
+		blade.mesh = bm
+		blade.material_override = mat
+		blade.position = Vector3(0.45, 1.0, -0.5)
+		ghost.add_child(blade)
+		tree.current_scene.add_child(ghost)
+		ghost.global_position = n3.global_position + Vector3(0.7 - 1.4 * float(i), 0.0, 0.4)
+		ghost.rotation.y = n3.rotation.y
+		var tween := tree.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(ghost, "rotation:y", ghost.rotation.y + (2.2 if i == 0 else -2.2), 0.3)
+		tween.tween_property(mat, "albedo_color:a", 0.0, 0.42).set_delay(0.08)
+		tween.chain().tween_callback(ghost.queue_free)
+
 static func ring_burst(world_pos: Vector3, color: Color, radius: float = 8.0) -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null or tree.current_scene == null:

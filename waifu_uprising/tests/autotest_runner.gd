@@ -76,7 +76,9 @@ func _physics_process(delta: float) -> void:
 		"connect":
 			if Net.net_state == Net.NetState.IN_LOBBY:
 				if mode == "client":
-					Net.set_local_class(Classes.get_default_id())
+					## Evolve-тест: клиент играет Валькирией — проверка репликации
+					## эволюции ВТОРОГО класса (у хоста — Берсерка).
+					Net.set_local_class(&"valkyrie" if Game.autotest_evolve else Classes.get_default_id())
 					Net.set_local_ready(true)
 				_set_phase("lobby")
 		"lobby":
@@ -142,8 +144,9 @@ func _inject_evolution_xp() -> void:
 	if _mc.phase != MatchController.Phase.FIGHT:
 		return
 	_evo_injected = true
-	print("[AUTOTEST] evolve-тест: хост инжектирует XP до уровня 3+ (серверный триггер эволюции)")
-	_sys.add_xp(Net.my_id(), 400)
+	print("[AUTOTEST] evolve-тест: хост инжектирует XP всем пирам до уровня 3+ (серверный триггер эволюции)")
+	for peer_id in _sys.states.keys():
+		_sys.add_xp(int(peer_id), 400)
 
 func _on_offer_opened(ids: Array, _deadline_msec: int) -> void:
 	if ids.size() > 0:
@@ -310,6 +313,8 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 			if host_form < 1:
 				problems.append("evolve: host pawn form=%d, expected >=1 (форма II)" % host_form)
 		else:
+			if _evo_local_form < 1:
+				problems.append("evolve: client's own valkyrie pawn never reached form II (%d)" % _evo_local_form)
 			if _evo_remote_form < 1:
 				problems.append("evolve: client never saw remote form change (репликация 'f')")
 	if not problems.is_empty():
