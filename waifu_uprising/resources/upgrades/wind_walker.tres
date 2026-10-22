@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"wind_walker"
+display_name = "Дочь ветра"
+description = "Скорость передвижения +8% за уровень."
+rarity = 0
+max_level = 3
+effect = 3
+value = 0.08
+target = 0
+color = Color(0.5, 1, 0.7, 1)
+glyph = "≈"

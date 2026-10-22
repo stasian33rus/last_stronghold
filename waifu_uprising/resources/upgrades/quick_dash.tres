@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"quick_dash"
+display_name = "Быстрый рывок"
+description = "Перезарядка рывка −10% за уровень."
+rarity = 0
+max_level = 3
+effect = 6
+value = 0.1
+target = 0
+color = Color(0.55, 1, 0.95, 1)
+glyph = "↯"

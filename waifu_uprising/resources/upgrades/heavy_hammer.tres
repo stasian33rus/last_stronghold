@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"heavy_hammer"
+display_name = "Тяжёлый молот"
+description = "Урон молота +15% за уровень."
+rarity = 0
+max_level = 3
+effect = 1
+value = 0.15
+target = 0
+color = Color(1, 0.6, 0.3, 1)
+glyph = "⚒"

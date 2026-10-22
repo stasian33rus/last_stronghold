@@ -28,6 +28,13 @@ var damage_dealt: float = 0.0
 ## Внешний источник ввода (автотесты / будущие AI-напарники). Если задан — заменяет Input.
 var external_input: Variant = null
 
+## Эффективные характеристики: база (ClassDefinition) × серверные модификаторы прогрессии.
+## Ресурс class_def НИКОГДА не мутируется — он общий для всех пешек класса.
+var st: Dictionary = {}
+var _prog_mods: Dictionary = {}
+var _lifesteal: float = 0.0
+var _hitbox_base_scale := Vector3.ONE
+
 var _seq_out: int = 0
 var _seq_in: int = 0
 var _latest_input := {"move": Vector2.ZERO, "aim_yaw": 0.0}
@@ -56,15 +63,82 @@ func _ready() -> void:
 		return
 	add_to_group("player_pawns")
 	add_to_group("hero_units")
-	health.setup(class_def.max_health)
+	_build_base_stats()
+	health.setup(st["max_health"])
 	health.died.connect(_on_died)
-	hitbox.damage = class_def.attack_damage
-	hitbox.knockback_force = class_def.attack_knockback
+	hitbox.damage = st["attack_damage"]
+	hitbox.knockback_force = st["attack_knockback"]
 	hitbox.owner_team = Units.Team.HERO
+	var hb_shape := hitbox.get_node_or_null(^"CollisionShape3D")
+	if hb_shape != null:
+		_hitbox_base_scale = hb_shape.scale
 	name_label.text = player_name
 	if is_local_pawn():
 		camera_rig.activate_for(self)
 		Events.local_pawn_ready.emit(self)
+
+func _build_base_stats() -> void:
+	var d := class_def
+	st = {
+		"max_health": d.max_health,
+		"move_speed": d.move_speed,
+		"acceleration": d.acceleration,
+		"friction": d.friction,
+		"attack_damage": d.attack_damage,
+		"attack_windup": d.attack_windup,
+		"attack_active": d.attack_active,
+		"attack_recover": d.attack_recover,
+		"attack_cooldown": d.attack_cooldown,
+		"attack_knockback": d.attack_knockback,
+		"attack_move_lock": d.attack_move_lock,
+		"dodge_speed": d.dodge_speed,
+		"dodge_duration": d.dodge_duration,
+		"dodge_cooldown": d.dodge_cooldown,
+		"dodge_iframes": d.dodge_iframes,
+		"respawn_time": d.respawn_time,
+		"respawn_health_factor": d.respawn_health_factor,
+	}
+
+## Сервер применяет прогрессию (улучшения + баффы магазина).
+func apply_progression(mods: Dictionary, extra: Dictionary) -> void:
+	_prog_mods = mods
+	_lifesteal = float(extra.get("lifesteal", 0.0))
+	refresh_effective_stats()
+
+func refresh_effective_stats() -> void:
+	if class_def == null:
+		return
+	var d := class_def
+	var m := _prog_mods
+	_build_base_stats()
+	st["max_health"] = d.max_health * float(m.get("max_health_mult", 1.0))
+	st["move_speed"] = d.move_speed * float(m.get("speed_mult", 1.0))
+	st["attack_damage"] = d.attack_damage * float(m.get("damage_mult", 1.0))
+	st["attack_knockback"] = d.attack_knockback * float(m.get("kb_mult", 1.0))
+	var cd := float(m.get("attack_cd_mult", 1.0))
+	st["attack_windup"] = maxf(0.03, d.attack_windup * cd)
+	st["attack_active"] = maxf(0.05, d.attack_active * cd)
+	st["attack_recover"] = maxf(0.03, d.attack_recover * cd)
+	st["attack_cooldown"] = maxf(0.0, d.attack_cooldown * cd)
+	st["dodge_cooldown"] = maxf(0.3, d.dodge_cooldown * float(m.get("dodge_cd_mult", 1.0)))
+	st["dodge_iframes"] = d.dodge_iframes + float(m.get("iframe_add", 0.0))
+	st["respawn_health_factor"] = minf(0.95, d.respawn_health_factor + float(m.get("respawn_add", 0.0)))
+	## Применение к компонентам (безопасно: максимум растёт — dolечиваем дельту).
+	var prev_max := health.max_health
+	health.max_health = st["max_health"]
+	if health.max_health > prev_max and not health.is_dead:
+		health.health = minf(health.max_health, health.health + (health.max_health - prev_max))
+	health.incoming_damage_multiplier = float(m.get("damage_taken_mult", 1.0))
+	hitbox.damage = st["attack_damage"]
+	hitbox.knockback_force = st["attack_knockback"]
+	var hb_shape := hitbox.get_node_or_null(^"CollisionShape3D")
+	if hb_shape != null:
+		hb_shape.scale = _hitbox_base_scale * clampf(float(m.get("range_mult", 1.0)), 0.5, 2.0)
+
+func effective_max_health() -> float:
+	if st.has("max_health"):
+		return float(st["max_health"])
+	return class_def.max_health if class_def != null else 100.0
 
 func is_local_pawn() -> bool:
 	return owner_peer == Net.my_id()
@@ -188,7 +262,7 @@ func try_attack() -> void:
 	_state_time = 0.0
 	_attack_phase = 0
 	attack_id += 1
-	_attack_cd_left = class_def.attack_windup + class_def.attack_active + class_def.attack_recover + class_def.attack_cooldown
+	_attack_cd_left = float(st["attack_windup"]) + float(st["attack_active"]) + float(st["attack_recover"]) + float(st["attack_cooldown"])
 	fx_swing.rpc()
 
 func try_dodge() -> void:
@@ -203,12 +277,12 @@ func try_dodge() -> void:
 	if dir.length_squared() < 0.01:
 		dir = -global_transform.basis.z ## рывок назад, если стоим
 	_dodge_dir = dir.normalized()
-	_dodge_time_left = class_def.dodge_duration
+	_dodge_time_left = st["dodge_duration"]
 	state = State.DODGE
 	_state_time = 0.0
-	_dodge_cd_left = class_def.dodge_cooldown
+	_dodge_cd_left = st["dodge_cooldown"]
 	kb.cancel()
-	health.grant_invulnerability(class_def.dodge_iframes)
+	health.grant_invulnerability(st["dodge_iframes"])
 
 func _server_sim(delta: float) -> void:
 	_attack_cd_left = maxf(0.0, _attack_cd_left - delta)
@@ -238,11 +312,11 @@ func _server_sim(delta: float) -> void:
 	if desired.length_squared() > 1.0:
 		desired = desired.normalized()
 
-	var speed := class_def.move_speed
+	var speed: float = st["move_speed"]
 	var control_lock := 0.0
 	match state:
 		State.ATTACK:
-			control_lock = class_def.attack_move_lock
+			control_lock = st["attack_move_lock"]
 			_advance_attack(delta)
 		State.DODGE:
 			_dodge_time_left -= delta
@@ -253,14 +327,14 @@ func _server_sim(delta: float) -> void:
 			pass
 
 	if state == State.DODGE:
-		_ctrl_vel = _dodge_dir * class_def.dodge_speed
+		_ctrl_vel = _dodge_dir * float(st["dodge_speed"])
 	else:
 		desired *= speed * (1.0 - control_lock)
-		_ctrl_vel.x = move_toward(_ctrl_vel.x, desired.x, class_def.acceleration * delta)
-		_ctrl_vel.z = move_toward(_ctrl_vel.z, desired.z, class_def.acceleration * delta)
+		_ctrl_vel.x = move_toward(_ctrl_vel.x, desired.x, float(st["acceleration"]) * delta)
+		_ctrl_vel.z = move_toward(_ctrl_vel.z, desired.z, float(st["acceleration"]) * delta)
 		if desired.length_squared() < 0.01:
-			_ctrl_vel.x = move_toward(_ctrl_vel.x, 0.0, class_def.friction * delta)
-			_ctrl_vel.z = move_toward(_ctrl_vel.z, 0.0, class_def.friction * delta)
+			_ctrl_vel.x = move_toward(_ctrl_vel.x, 0.0, float(st["friction"]) * delta)
+			_ctrl_vel.z = move_toward(_ctrl_vel.z, 0.0, float(st["friction"]) * delta)
 		if state != State.ATTACK:
 			state = State.RUN if (_ctrl_vel.x * _ctrl_vel.x + _ctrl_vel.z * _ctrl_vel.z) > 1.0 else State.IDLE
 
@@ -274,14 +348,16 @@ func _server_sim(delta: float) -> void:
 	move_and_slide()
 
 func _advance_attack(_delta: float) -> void:
-	var d := class_def
-	if _attack_phase == 0 and _state_time >= d.attack_windup:
+	var windup: float = st["attack_windup"]
+	var active: float = st["attack_active"]
+	var recover: float = st["attack_recover"]
+	if _attack_phase == 0 and _state_time >= windup:
 		_attack_phase = 1
-		hitbox.activate(d.attack_active)
-	if _attack_phase == 1 and _state_time >= d.attack_windup + d.attack_active:
+		hitbox.activate(active)
+	if _attack_phase == 1 and _state_time >= windup + active:
 		_attack_phase = 2
 		hitbox.deactivate()
-	if _state_time >= d.attack_windup + d.attack_active + d.attack_recover:
+	if _state_time >= windup + active + recover:
 		state = State.IDLE
 		_state_time = 0.0
 		hitbox.deactivate()
@@ -301,6 +377,9 @@ func on_hit_landed(target: Node, dmg: Dictionary) -> void:
 		var th := target.get_health() as HealthComponent
 		if th != null and th.is_dead:
 			kills += 1
+			## «Кровавая грива»: лечение за подтверждённое сервером убийство.
+			if _lifesteal > 0.0:
+				health.heal(effective_max_health() * _lifesteal)
 	Events.server_hit_landed.emit(self, target, dmg)
 
 func on_damage_received(dmg: Dictionary) -> void:
@@ -313,7 +392,7 @@ func _on_died(dmg: Dictionary) -> void:
 	if not Net.is_server():
 		return
 	state = State.DOWN
-	_respawn_left = class_def.respawn_time
+	_respawn_left = st["respawn_time"]
 	hitbox.deactivate()
 	kb.cancel()
 	kb.apply(dmg.get("knockback_dir", Vector3.FORWARD), 4.0, 1.0)
@@ -321,15 +400,23 @@ func _on_died(dmg: Dictionary) -> void:
 	fx_down.rpc()
 
 func _respawn() -> void:
+	revive_now(st["respawn_health_factor"])
+
+## Серверное возрождение (таймер DOWN или милосердный подъём в интермиссии).
+func revive_now(health_factor: float) -> void:
+	if not Net.is_server():
+		return
 	var spawn_points := get_tree().get_nodes_in_group("player_spawn_points")
 	if spawn_points.size() > 0:
 		var m: Marker3D = spawn_points[Game.next_rand() % spawn_points.size()]
 		global_position = m.global_position + Vector3(0.0, 0.2, 0.0)
-	health.setup(class_def.max_health * class_def.respawn_health_factor)
+	health.setup(effective_max_health() * clampf(health_factor, 0.05, 1.0))
 	health.grant_invulnerability(2.0)
 	kb.cancel()
+	_respawn_left = 0.0
 	state = State.IDLE
 	velocity = Vector3.ZERO
+	_ctrl_vel = Vector3.ZERO
 	fx_respawn.rpc()
 
 # ------------------------------------------------------------------ репликация

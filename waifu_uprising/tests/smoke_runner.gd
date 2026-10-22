@@ -184,6 +184,127 @@ func _test_match_victory_flow() -> void:
 	var obj_after := int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	_check(obj_after <= _obj_baseline + 40,
 		"Объекты не накапливаются (%d до волны -> %d после, предел +%d)" % [_obj_baseline, obj_after, 40])
+
+	await _test_progression()
+
+# ------------------------------------------------------------------ прогрессия (Этап 2)
+
+func _prog() -> ProgressionSystem:
+	var ps := get_tree().get_nodes_in_group("progression_system")
+	return ps[0] if ps.size() > 0 else null
+
+func _test_progression() -> void:
+	var sys := _prog()
+	if sys == null:
+		_check(false, "ProgressionSystem найден")
+		return
+	_check(true, "ProgressionSystem найден")
+
+	## 5 убитых Пижонов × 20 XP = 100 XP -> ровный уровень 2, остаток 0, открыт выбор.
+	var st: ProgressionState = sys.states.get(1, null)
+	_check(st != null, "Серверное состояние прогрессии peer 1 существует")
+	if st == null:
+		return
+	_check(st.level == 2 and st.xp == 0, "100 XP за волну -> уровень 2, остаток 0 (level=%d xp=%d)" % [st.level, st.xp])
+	_check(st.pending_choices == 1 or st.offer_active, "Повышение уровня открыло выбор улучшения")
+	_check(sys.local_state.get("level", 0) == st.level and sys.local_state.get("coins", -1) == st.coins,
+		"Синхронизация состояния (зеркало HUD) корректна")
+	_check(st.coins >= 25, "Монеты за убийства начислены (coins=%d)" % st.coins)
+
+	## Формула и арифметика уровней на изолированном состоянии.
+	var probe := ProgressionState.new()
+	probe.peer_id = 999
+	sys.states[999] = probe
+	_check(sys.balance.xp_required(1) == 100 and sys.balance.xp_required(2) == 150 and sys.balance.xp_required(3) == 200,
+		"Формула XP: 100 / 150 / 200")
+	sys.add_xp(999, 260)
+	_check(probe.level == 3 and probe.xp == 10, "260 XP -> уровень 3, остаток 10 (level=%d xp=%d)" % [probe.level, probe.xp])
+	sys.add_xp(999, 1000000)
+	_check(probe.level == sys.balance.max_level and probe.xp == 0,
+		"Максимальный уровень %d, опыт не копится" % sys.balance.max_level)
+	var pending_at_max := probe.pending_choices
+	sys.add_xp(999, 500)
+	_check(probe.level == sys.balance.max_level and probe.pending_choices == pending_at_max,
+		"После макс. уровня новый опыт не даёт уровней и выборов")
+
+	## Предложение: 3 уникальных допустимых id.
+	if st.offer_active:
+		var ids := st.offer_ids
+		_check(ids.size() >= 1 and ids.size() <= 3, "Предложение содержит %d улучшений" % ids.size())
+		var unique := {}
+		var valid := true
+		for id in ids:
+			if unique.has(id):
+				valid = false
+			unique[id] = true
+			var def := Content.get_upgrade(id)
+			if def == null or int(st.upgrade_levels.get(id, 0)) >= def.max_level:
+				valid = false
+		_check(valid, "Все предложения уникальны и не на максимальном уровне")
+
+		## Отклонение недопустимого id (эффекта нет, предложение остаётся).
+		var levels_before := st.upgrade_levels.duplicate(true)
+		sys._apply_choice(1, &"totally_bogus_id", false)
+		_check(st.upgrade_levels == levels_before and st.offer_active, "Недопустимый id отклонён без эффекта")
+
+		## Применение ровно один раз: повторный вызов не дублирует.
+		var first_id: StringName = ids[0]
+		sys._apply_choice(1, first_id, false)
+		var level_after_first: int = int(st.upgrade_levels.get(first_id, 0))
+		sys._apply_choice(1, first_id, false) ## повтор — offer уже закрыт
+		_check(int(st.upgrade_levels.get(first_id, 0)) == level_after_first and level_after_first == 1,
+			"Улучшение применено ровно один раз")
+		_check(st.pending_choices == 0, "pending_choices списан после выбора")
+
+	## Автовыбор по таймауту (серверный таймер).
+	sys.add_xp(1, sys.balance.xp_required(st.level))
+	_check(st.offer_active, "Новый уровень открыл новое предложение")
+	if st.offer_active:
+		var auto_id: StringName = st.offer_ids[0]
+		st.offer_deadline_msec = Time.get_ticks_msec() - 1
+		await _frames(5)
+		_check(not st.offer_active and int(st.upgrade_levels.get(auto_id, 0)) >= 1,
+			"Таймаут -> сервер применил первое предложение (автовыбор)")
+
+	## Одновременные выборы двух разных игроков.
+	var p2 := ProgressionState.new()
+	p2.peer_id = 998
+	sys.states[998] = p2
+	sys.add_xp(998, 100)
+	_check(p2.offer_active, "Второй игрок получил собственное предложение")
+	if p2.offer_active and p2.offer_ids.size() > 0:
+		sys._apply_choice(998, p2.offer_ids[0], false)
+		_check(int(p2.upgrade_levels.values().reduce(func(a, b): return a + b, 0)) == 1,
+			"Второй игрок применил улучшение независимо")
+
+	## Эффект улучшения РЕАЛЬНО меняет характеристики (детерминированно: iron_body).
+	var pawn := _local_pawn()
+	var hp_max_before := pawn.health.max_health
+	p2.upgrade_levels[&"iron_body"] = 2
+	sys._refresh_pawn(998, p2) ## у peer 998 пешки нет — не падать
+	st.upgrade_levels[&"iron_body"] = int(st.upgrade_levels.get(&"iron_body", 0)) + 2
+	sys._refresh_pawn(1, st)
+	_check(pawn.health.max_health > hp_max_before * 1.25,
+		"iron_body ×2 реально повысил макс. HP (%.0f -> %.0f)" % [hp_max_before, pawn.health.max_health])
+	_check(is_equal_approx(pawn.health.incoming_damage_multiplier, 1.0), "Базовый множитель входящего урона = 1.0")
+
+	## Магазин вне интермиссии закрыт (фаза VICTORY/FIGHT).
+	var coins_before := st.coins
+	var bought := sys.try_buy(1, &"potion_small")
+	_check(not bought and st.coins == coins_before, "Покупка вне INTERMISSION отклонена, монеты не списаны")
+
+	## Неавторизованный прямой вызов клиентских RPC: sender offline = 0,
+	## состояния нет — никакого эффекта (XP/монеты/покупки не меняются).
+	var xp_before := st.xp
+	var lvl_before := st.level
+	sys.cl_choose("iron_body")
+	sys.cl_buy("potion_small")
+	sys.cl_wave_ready(true)
+	_check(st.xp == xp_before and st.level == lvl_before and st.coins == coins_before and not st.wave_ready,
+		"Прямые cl_choose/cl_buy/cl_wave_ready без валидного sender не имеют эффекта")
+
+	sys.states.erase(999)
+	sys.states.erase(998)
 ## Поражение по смерти Гигачада + падение/возрождение игрока.
 func _test_defeat_and_down_flow() -> void:
 	Game.start_offline_match(&"berserk", "Тестер-2")

@@ -5,7 +5,7 @@ extends Node
 ## Поражение: здоровье Гигачада = 0 (ТЗ §3). Победа: зачищены все волны.
 ## Состояние фаз реплицируется клиентам (HUD опрашивает локальный узел).
 
-enum Phase { LOADING = 0, COUNTDOWN = 1, FIGHT = 2, VICTORY = 3, DEFEAT = 4 }
+enum Phase { LOADING = 0, COUNTDOWN = 1, FIGHT = 2, VICTORY = 3, DEFEAT = 4, WAVE_COMPLETE = 5, INTERMISSION = 6 }
 
 const COUNTDOWN_SEC: float = 3.5
 const SCENE_READY_TIMEOUT: float = 15.0
@@ -214,3 +214,29 @@ func register_kill(attacker_peer: int) -> void:
 func register_down(peer_id: int) -> void:
 	if stats.has(peer_id):
 		stats[peer_id]["downs"] = int(stats[peer_id]["downs"]) + 1
+
+## Хук от ProgressionSystem (изменение готовности к следующей волне).
+func on_wave_ready_changed() -> void:
+	if not Net.is_server():
+		return
+	if phase == Phase.INTERMISSION and _prog() != null and _prog().are_all_wave_ready():
+		_begin_next_wave_countdown()
+
+var _progression: Node = null
+
+## Ленивый поиск: ProgressionSystem может войти в дерево позже MatchController.
+func _prog() -> Node:
+	if _progression == null or not is_instance_valid(_progression):
+		var ps := get_tree().get_nodes_in_group("progression_system")
+		_progression = ps[0] if ps.size() > 0 else null
+	return _progression
+
+## Старт отсчёта следующей волны из интермиссии (полный поток — фаза INTERMISSION).
+func _begin_next_wave_countdown() -> void:
+	if not Net.is_server() or phase != Phase.INTERMISSION:
+		return
+	var prog := _prog()
+	phase = Phase.COUNTDOWN
+	countdown = prog.balance.next_wave_countdown if prog != null else COUNTDOWN_SEC
+	_last_countdown_int = -1
+	_broadcast_phase()

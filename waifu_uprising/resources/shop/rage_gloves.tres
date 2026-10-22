@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShopItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/shop_item_definition.gd" id="1_shop"]
+
+[resource]
+script = ExtResource("1_shop")
+id = &"rage_gloves"
+display_name = "Перчатки ярости"
+description = "Урон +25% на 25 секунд боя."
+price = 30
+effect = 1
+value = 0.25
+duration = 25.0
+limit_per_intermission = 1
+limit_per_match = -1
+color = Color(1, 0.5, 0.35, 1)
+glyph = "⚔"

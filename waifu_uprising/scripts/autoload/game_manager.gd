@@ -5,13 +5,17 @@ extends Node
 ##   +port=NNNNN         — порт (dedicated / автотесты)
 ##   +autotest=host|client — интеграционный сетевой тест (см. tests/autotest_runner.gd)
 ##   +ip=A.B.C.D         — адрес сервера для autotest=client
+##   +fast=1             — ускоренный баланс прогрессии (короткие интермиссии — для тестов)
 
 const MENU_SCENE: String = "res://scenes/main_menu/main_menu.tscn"
 const ARENA_SCENE: String = "res://scenes/levels/arena_01/arena_01.tscn"
+const BALANCE_DEFAULT: String = "res://resources/balance/progression.tres"
+const BALANCE_FAST: String = "res://resources/balance/progression_fast.tres"
 
 var match_seed: int = 0
 var match_players_snapshot: Dictionary = {}
 var rng := RandomNumberGenerator.new()
+var progression_balance_path: String = BALANCE_DEFAULT
 
 ## Режимы автотестов.
 var autotest_mode: String = ""
@@ -46,6 +50,8 @@ func _parse_cmdline() -> void:
 			autotest_mode = a.trim_prefix("autotest=")
 		elif a.begins_with("ip="):
 			autotest_ip = a.trim_prefix("ip=")
+		elif a == "fast=1" or a == "fast":
+			progression_balance_path = BALANCE_FAST
 
 func _on_match_start_requested(scene_path: String, seed_value: int, players_snapshot: Dictionary) -> void:
 	if Net.is_dedicated and Net.my_id() == 1:

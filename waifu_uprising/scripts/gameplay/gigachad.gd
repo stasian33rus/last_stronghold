@@ -16,6 +16,16 @@ const RESONANCE_MAX: float = 100.0
 @export var pulse_radius: float = 9.0
 @export var pulse_knockback: float = 11.0
 
+## Командные улучшения резонанса (копятся сервером из выборов игроков, Этап 2).
+var team_reso_rate_mult: float = 1.0
+var team_pulse_heal_mult: float = 1.0
+
+func add_team_upgrade(effect: int, value: float) -> void:
+	if effect == UpgradeDefinition.Effect.RESO_RATE_MULT:
+		team_reso_rate_mult += value
+	elif effect == UpgradeDefinition.Effect.RESO_HEAL_MULT:
+		team_pulse_heal_mult += value
+
 var team: int = Units.Team.HERO
 var owner_peer: int = 1
 var state: int = State.IDLE
@@ -50,9 +60,9 @@ func _physics_process(delta: float) -> void:
 		_apply_gravity(delta)
 		move_and_slide()
 		return
-	## Резонанс: постоянная генерация (ТЗ §5).
+	## Резонанс: постоянная генерация (ТЗ §5) с командными улучшениями.
 	if state == State.IDLE:
-		resonance = minf(RESONANCE_MAX, resonance + resonance_rate * delta)
+		resonance = minf(RESONANCE_MAX, resonance + resonance_rate * team_reso_rate_mult * delta)
 		if resonance >= RESONANCE_MAX:
 			_discharge_pulse()
 	elif state == State.PULSE and _state_time >= 0.9:
@@ -77,7 +87,7 @@ func _discharge_pulse() -> void:
 		if pawn == null or pawn.health.is_dead:
 			continue
 		if pawn.global_position.distance_to(center) <= pulse_radius:
-			pawn.health.heal(pulse_heal)
+			pawn.health.heal(pulse_heal * team_pulse_heal_mult)
 	## Отбрасывание врагов — физически ощутимая волна.
 	for unit in get_tree().get_nodes_in_group("enemy_units"):
 		var foe := unit as EnemyFop

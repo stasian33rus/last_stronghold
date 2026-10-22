@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"second_wind"
+display_name = "Второе дыхание"
+description = "Возрождение от источника восстанавливает на 15% больше HP за уровень."
+rarity = 1
+max_level = 2
+effect = 10
+value = 0.15
+target = 0
+color = Color(1, 0.75, 0.8, 1)
+glyph = "↑"

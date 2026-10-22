@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"guardian_ward"
+display_name = "Оберег Хранительницы"
+description = "Получаемый урон −8% за уровень."
+rarity = 2
+max_level = 3
+effect = 11
+value = 0.08
+target = 0
+color = Color(1, 0.62, 0.92, 1)
+glyph = "◇"

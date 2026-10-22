@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"thunder_push"
+display_name = "Раскат грома"
+description = "Сила отбрасывания врагов +15% за уровень."
+rarity = 0
+max_level = 3
+effect = 5
+value = 0.15
+target = 0
+color = Color(1, 0.85, 0.35, 1)
+glyph = "⇉"

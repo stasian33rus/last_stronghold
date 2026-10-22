@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShopItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/shop_item_definition.gd" id="1_shop"]
+
+[resource]
+script = ExtResource("1_shop")
+id = &"potion_small"
+display_name = "Малое лечение"
+description = "Восстанавливает 40% максимального здоровья сразу."
+price = 20
+effect = 0
+value = 0.4
+duration = 0.0
+limit_per_intermission = 3
+limit_per_match = -1
+color = Color(0.5, 1, 0.6, 1)
+glyph = "✚"

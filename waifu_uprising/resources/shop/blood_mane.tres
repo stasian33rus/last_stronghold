@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShopItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/shop_item_definition.gd" id="1_shop"]
+
+[resource]
+script = ExtResource("1_shop")
+id = &"blood_mane"
+display_name = "Кровавая грива"
+description = "Каждое убийство лечит 6% максимального здоровья (постоянно)."
+price = 60
+effect = 4
+value = 0.06
+duration = 0.0
+limit_per_intermission = -1
+limit_per_match = 1
+color = Color(0.95, 0.35, 0.55, 1)
+glyph = "☾"

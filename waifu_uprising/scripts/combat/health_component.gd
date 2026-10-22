@@ -11,6 +11,8 @@ signal health_changed(current: float, maximum: float)
 
 @export var max_health: float = 100.0
 @export var invulnerable: bool = false
+## Серверный множитель входящего урона (Оберег, защитные артефакты). 1.0 = без изменений.
+var incoming_damage_multiplier: float = 1.0
 
 var health: float = 100.0
 var is_dead: bool = false
@@ -31,9 +33,11 @@ func take_damage(damage: Dictionary) -> bool:
 		return false
 	if Time.get_ticks_msec() < invulnerable_until_msec:
 		return false
-	var amount: float = float(damage.get("amount", 0.0))
+	var amount: float = float(damage.get("amount", 0.0)) * maxf(0.0, incoming_damage_multiplier)
 	if amount <= 0.0:
 		return false
+	damage = damage.duplicate()
+	damage["amount"] = amount
 	health = maxf(0.0, health - amount)
 	damage_taken.emit(amount, damage)
 	health_changed.emit(health, max_health)
@@ -47,6 +51,14 @@ func heal(amount: float) -> void:
 		return
 	health = minf(max_health, health + amount)
 	healed.emit(amount)
+	health_changed.emit(health, max_health)
+
+## Повышение максимума (амулеты/улучшения): текущее здоровье растёт вместе с максимумом.
+func add_max_health(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	max_health += delta
+	health = minf(max_health, health + delta)
 	health_changed.emit(health, max_health)
 
 func grant_invulnerability(duration_sec: float) -> void:

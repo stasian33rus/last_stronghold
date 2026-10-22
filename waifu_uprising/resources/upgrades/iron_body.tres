@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"iron_body"
+display_name = "Железное тело"
+description = "Максимальное здоровье +15% за уровень."
+rarity = 0
+max_level = 3
+effect = 0
+value = 0.15
+target = 0
+color = Color(0.85, 0.45, 0.5, 1)
+glyph = "♥"

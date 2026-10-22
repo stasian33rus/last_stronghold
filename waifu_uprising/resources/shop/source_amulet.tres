@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShopItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/shop_item_definition.gd" id="1_shop"]
+
+[resource]
+script = ExtResource("1_shop")
+id = &"source_amulet"
+display_name = "Амулет источника"
+description = "Максимальное здоровье +25 (и столько же текущего)."
+price = 45
+effect = 3
+value = 25.0
+duration = 0.0
+limit_per_intermission = -1
+limit_per_match = 2
+color = Color(1, 0.75, 0.4, 1)
+glyph = "◆"

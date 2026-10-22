@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShopItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/shop_item_definition.gd" id="1_shop"]
+
+[resource]
+script = ExtResource("1_shop")
+id = &"keeper_ward"
+display_name = "Оберег хранительницы"
+description = "Получаемый урон −20% до конца матча."
+price = 40
+effect = 2
+value = 0.2
+duration = 0.0
+limit_per_intermission = -1
+limit_per_match = 1
+color = Color(0.55, 0.75, 1, 1)
+glyph = "◇"

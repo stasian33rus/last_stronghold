@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 Events="*res://scripts/autoload/events.gd"
 Classes="*res://scripts/autoload/class_registry.gd"
+Content="*res://scripts/autoload/content_registry.gd"
 Sfx="*res://scripts/autoload/sfx.gd"
 Net="*res://scripts/autoload/net_manager.gd"
 Game="*res://scripts/autoload/game_manager.gd"
@@ -81,6 +82,21 @@ menu_cancel={
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194305,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
+choose_1={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":49,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+choose_2={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":50,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+choose_3={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":51,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
 
 [layer_names]
 
@@ -92,6 +108,7 @@ menu_cancel={
 3d_physics/layer_6="hitbox_enemy"
 3d_physics/layer_7="hurtbox_hero"
 3d_physics/layer_8="hurtbox_enemy"
+3d_physics/layer_9="hurtbox_prop"
 
 [network]
 

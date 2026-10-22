@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="ProgressionBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/progression_balance.gd" id="1_bal"]
+
+[resource]
+script = ExtResource("1_bal")
+xp_base = 100
+xp_per_level = 50
+max_level = 10
+xp_normal = 20
+xp_elite = 50
+xp_boss = 100
+xp_crate = 5
+coins_kill = 5
+coins_wave_clear = 25
+coins_crate = 2
+choice_time = 8.0
+wave_complete_time = 1.0
+intermission_time = 6.0
+next_wave_countdown = 2.0

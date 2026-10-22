@@ -1,10 +1,11 @@
-[gd_scene load_steps=32 format=3]
+[gd_scene load_steps=34 format=3]
 
 [ext_resource type="Script" path="res://scripts/levels/arena_01.gd" id="1_arena"]
 [ext_resource type="Script" path="res://scripts/progression/wave_manager.gd" id="2_wave"]
 [ext_resource type="Script" path="res://scripts/gameplay/match_controller.gd" id="3_match"]
 [ext_resource type="PackedScene" path="res://scenes/npcs/gigachad.tscn" id="4_giga"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
+[ext_resource type="Script" path="res://scripts/progression/progression_system.gd" id="6_prog"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.03, 0.02, 0.08, 1)
@@ -323,5 +324,8 @@ wave_paths = Array[String](["res://resources/waves/wave_01.tres"])
 
 [node name="MatchController" type="Node" parent="."]
 script = ExtResource("3_match")
+
+[node name="ProgressionSystem" type="Node" parent="."]
+script = ExtResource("6_prog")
 
 [node name="HUD" parent="." instance=ExtResource("5_hud")]

@@ -20,3 +20,16 @@ signal local_announcement(text: String, duration: float)
 ## Матч: фаза/результат (эмитит MatchController на всех пирах).
 signal match_phase_changed(phase: int)
 signal match_ended(victory: bool, stats: Dictionary)
+
+## Прогрессия и магазин (Этап 2) — локальные события для UI.
+## Всплывающее уведомление: kind = "xp" | "coins" | "levelup" | "shop" | "info".
+signal local_toast(text: String, kind: String)
+## Обновлённое локальное состояние прогрессии (словарь-зеркало серверного).
+signal progression_updated(state: Dictionary)
+## Сервер открыл выбор улучшения: ids (до 3), дедлайн (msec по часам принимающего пира).
+signal upgrade_offer_opened(ids: Array, deadline_msec: int)
+signal upgrade_offer_closed
+## Ответ магазина конкретному пиру.
+signal shop_result_msg(ok: bool, text: String)
+## Межволновая фаза: обновлённый список ready (peer_id -> bool) — для HUD.
+signal wave_ready_state_changed(states: Dictionary)

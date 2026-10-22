@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_definition.gd" id="1_upg"]
+
+[resource]
+script = ExtResource("1_upg")
+id = &"long_reach"
+display_name = "Длинная рука"
+description = "Радиус поражения удара +10% за уровень."
+rarity = 1
+max_level = 2
+effect = 4
+value = 0.1
+target = 0
+color = Color(0.4, 0.9, 1, 1)
+glyph = "↔"

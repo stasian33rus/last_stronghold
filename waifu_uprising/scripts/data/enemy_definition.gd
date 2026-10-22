@@ -6,6 +6,8 @@ extends Resource
 @export var display_name: String = "Пижон"
 @export var scene_path: String = "res://scenes/enemies/fop.tscn"
 @export var color: Color = Color("b96bd6")
+## Категория награды (ProgressionBalance): 0 = обычный, 1 = элита, 2 = босс.
+@export_range(0, 2) var category: int = 0
 
 @export var max_health: float = 60.0
 @export var move_speed: float = 4.2
