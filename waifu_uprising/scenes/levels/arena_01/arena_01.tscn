@@ -320,7 +320,7 @@ spawn_path = NodePath("../Entities")
 
 [node name="WaveManager" type="Node" parent="."]
 script = ExtResource("2_wave")
-wave_paths = Array[String](["res://resources/waves/wave_01.tres"])
+wave_paths = Array[String](["res://resources/waves/wave_01.tres", "res://resources/waves/wave_02.tres", "res://resources/waves/wave_03.tres", "res://resources/waves/wave_04.tres"])
 
 [node name="MatchController" type="Node" parent="."]
 script = ExtResource("3_match")

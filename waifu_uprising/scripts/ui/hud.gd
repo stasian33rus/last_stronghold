@@ -47,10 +47,19 @@ var _local_prog: Dictionary = {}
 @onready var cards_box: HBoxContainer = $UpgradePanel/Center/CardsBox
 @onready var offer_timer_back: ColorRect = $UpgradePanel/Center/TimerBack
 @onready var offer_timer_fill: ColorRect = $UpgradePanel/Center/TimerBack/Fill
+@onready var shop_panel: PanelContainer = $ShopPanel
+@onready var shop_title: Label = $ShopPanel/VBox/ShopTitle
+@onready var shop_timer: Label = $ShopPanel/VBox/ShopTimer
+@onready var shop_items_box: VBoxContainer = $ShopPanel/VBox/ItemsBox
+@onready var ready_check: CheckButton = $ShopPanel/VBox/ReadyRow/ReadyCheck
+@onready var ready_state_label: Label = $ShopPanel/VBox/ReadyRow/ReadyStateLabel
 
 func _ready() -> void:
 	result_panel.visible = false
 	upgrade_panel.visible = false
+	shop_panel.visible = false
+	ready_check.toggled.connect(_on_ready_toggled)
+	Events.wave_ready_state_changed.connect(_on_wave_ready_states)
 	announcement_label.modulate.a = 0.0
 	rematch_button.pressed.connect(_on_rematch)
 	menu_button.pressed.connect(_on_menu)
@@ -89,6 +98,7 @@ func _process(delta: float) -> void:
 	_update_players_list()
 	_update_progression()
 	_update_offer_timer()
+	_update_shop()
 
 func _find_local_pawn(delta: float) -> void:
 	if _pawn != null and is_instance_valid(_pawn):
@@ -138,8 +148,14 @@ func _update_wave() -> void:
 			wave_label.text = ("ПРИГОТОВЬТЕСЬ: %d" % n) if n > 0 else "В БОЙ!"
 			enemies_label.text = ""
 		MatchController.Phase.FIGHT:
-			wave_label.text = "ВОЛНА %d" % maxi(1, _mc.wave_number)
+			wave_label.text = "ВОЛНА %d / %d" % [maxi(1, _mc.wave_number), _mc.waves_total]
 			enemies_label.text = "Противников: %d" % _mc.enemies_left_total
+		MatchController.Phase.WAVE_COMPLETE:
+			wave_label.text = "ВОЛНА %d ОТБИТА!" % maxi(1, _mc.wave_number)
+			enemies_label.text = ""
+		MatchController.Phase.INTERMISSION:
+			wave_label.text = "МЕЖДУ ВОЛНАМИ"
+			enemies_label.text = ""
 		MatchController.Phase.VICTORY:
 			wave_label.text = "ВОЛНА ОТБИТА"
 			enemies_label.text = ""
@@ -429,3 +445,98 @@ func _on_toast(text: String, kind: String) -> void:
 func _on_shop_result(ok: bool, text: String) -> void:
 	_on_toast(text, "shop" if ok else "info")
 	Sfx.play("ui" if ok else "hurt", -10.0)
+
+
+# ------------------------------------------------------------------ магазин (Этап 2)
+
+var _shop_rows: Dictionary = {} ## item_id -> {"button": Button, "price_label": Label}
+var _shop_built := false
+var _ready_map: Dictionary = {}
+
+func _on_ready_toggled(value: bool) -> void:
+	if _sys == null:
+		_find_system()
+	if _sys != null:
+		Sfx.play("ui")
+		_sys.request_wave_ready(value)
+
+func _on_wave_ready_states(states: Dictionary) -> void:
+	_ready_map = states
+	var ready_count := 0
+	for v in states.values():
+		if v:
+			ready_count += 1
+	ready_state_label.text = "Готовы: %d / %d" % [ready_count, states.size()]
+
+func _update_shop() -> void:
+	if _mc == null:
+		return
+	var intermission := _mc.phase == MatchController.Phase.INTERMISSION
+	shop_panel.visible = intermission and not _ended_shown
+	if not intermission:
+		return
+	if not _shop_built:
+		_build_shop_items()
+		shop_built_guard()
+	shop_title.text = "МАГАЗИН ИСТОЧНИКА — волна %d отбита" % maxi(1, _mc.wave_number)
+	shop_timer.text = "Следующая волна через: %d с" % int(ceil(_mc.countdown))
+	## Доступность покупок по текущему балансу (баланс — из серверного зеркала).
+	var coins := 0
+	var wave_ready := false
+	if _sys != null:
+		coins = int(_sys.local_state.get("coins", 0))
+		wave_ready = bool(_sys.local_state.get("wave_ready", false))
+	ready_check.set_pressed_no_signal(wave_ready)
+	for item_id in _shop_rows.keys():
+		var row: Dictionary = _shop_rows[item_id]
+		var def := Content.get_shop_item(item_id)
+		if def != null:
+			(row["button"] as Button).disabled = coins < def.price
+
+func shop_built_guard() -> void:
+	_shop_built = true
+
+func _build_shop_items() -> void:
+	for child in shop_items_box.get_children():
+		child.queue_free()
+	_shop_rows.clear()
+	for def in Content.all_shop_items():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var glyph := Label.new()
+		glyph.text = def.glyph
+		glyph.add_theme_font_size_override("font_size", 22)
+		glyph.add_theme_color_override("font_color", def.color)
+		glyph.custom_minimum_size = Vector2(30, 0)
+		row.add_child(glyph)
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var name_label := Label.new()
+		name_label.text = def.display_name
+		name_label.add_theme_font_size_override("font_size", 15)
+		info.add_child(name_label)
+		var desc_label := Label.new()
+		desc_label.text = def.description
+		desc_label.add_theme_font_size_override("font_size", 12)
+		desc_label.add_theme_color_override("font_color", Color(0.72, 0.74, 0.85))
+		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		info.add_child(desc_label)
+		row.add_child(info)
+		var price_label := Label.new()
+		price_label.text = "%d" % def.price
+		price_label.add_theme_font_size_override("font_size", 16)
+		price_label.add_theme_color_override("font_color", Color(1, 0.85, 0.35))
+		price_label.custom_minimum_size = Vector2(40, 0)
+		row.add_child(price_label)
+		var buy := Button.new()
+		buy.text = "Купить"
+		buy.add_theme_font_size_override("font_size", 14)
+		var item_id: StringName = def.id
+		buy.pressed.connect(func() -> void:
+			if _sys != null:
+				Sfx.play("ui")
+				_sys.request_buy(item_id)
+		)
+		row.add_child(buy)
+		shop_items_box.add_child(row)
+		_shop_rows[def.id] = {"button": buy, "price_label": price_label}

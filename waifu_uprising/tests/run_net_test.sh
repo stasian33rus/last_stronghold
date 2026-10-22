@@ -12,10 +12,10 @@ LOGDIR="${LOGDIR:-/tmp}"
 echo "== Сетевой тест: порт $PORT, проект $PROJ =="
 cd "$PROJ" || exit 2
 
-timeout 300 "$GODOT" --headless -- "+autotest=host" "+port=$PORT" > "$LOGDIR/net_host.log" 2>&1 &
+timeout 300 "$GODOT" --headless -- "+autotest=host" "+port=$PORT" "+fast=1" > "$LOGDIR/net_host.log" 2>&1 &
 HOST_PID=$!
 sleep 5
-timeout 300 "$GODOT" --headless -- "+autotest=client" "+ip=127.0.0.1" "+port=$PORT" > "$LOGDIR/net_client.log" 2>&1 &
+timeout 300 "$GODOT" --headless -- "+autotest=client" "+ip=127.0.0.1" "+port=$PORT" "+fast=1" > "$LOGDIR/net_client.log" 2>&1 &
 CLIENT_PID=$!
 
 wait "$CLIENT_PID"; CLIENT_EXIT=$?

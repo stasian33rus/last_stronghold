@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="WaveDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/wave_definition.gd" id="1_wv"]
+[ext_resource type="Script" path="res://scripts/data/wave_group.gd" id="2_wg"]
+
+[sub_resource type="Resource" id="g0"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/fop.tres"
+count_base = 2
+count_per_player = 1
+
+[resource]
+script = ExtResource("1_wv")
+index = 3
+display_name = "Тени подиума"
+intro_delay = 1.0
+spawn_interval = 0.55
+max_alive = 12
+groups = Array[ExtResource("2_wg")]([SubResource("g0")])
