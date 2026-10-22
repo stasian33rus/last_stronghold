@@ -200,6 +200,8 @@ func _process(_delta: float) -> void:
 func cl_choose(id_str: String) -> void:
 	if not Net.is_server():
 		return
+	if not is_inside_tree():
+		return ## окно смены сцены (реванш/меню): multiplayer == null — RPC устарел
 	var peer := multiplayer.get_remote_sender_id()
 	if not states.has(peer):
 		return
@@ -244,6 +246,8 @@ func _apply_choice(peer_id: int, id: StringName, auto: bool) -> void:
 func cl_buy(item_str: String) -> void:
 	if not Net.is_server():
 		return
+	if not is_inside_tree():
+		return ## см. cl_choose
 	try_buy(multiplayer.get_remote_sender_id(), StringName(item_str))
 
 ## Полная серверная валидация покупки. Возвращает успех (используется и тестами).
@@ -300,6 +304,8 @@ func try_buy(peer_id: int, id: StringName) -> bool:
 func cl_wave_ready(value: bool) -> void:
 	if not Net.is_server():
 		return
+	if not is_inside_tree():
+		return ## см. cl_choose
 	set_wave_ready(multiplayer.get_remote_sender_id(), bool(value))
 
 func set_wave_ready(peer_id: int, value: bool) -> void:

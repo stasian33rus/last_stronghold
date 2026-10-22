@@ -229,6 +229,11 @@ func _consume_local_input() -> void:
 func sv_input(seq: int, move: Vector2, aim: float) -> void:
 	if not Net.is_server():
 		return
+	## Гонка смены сцены (реванш/выход в меню): пакет может достичь пешку,
+	## уже выведенную из дерева — там multiplayer == null. Игнорируем: пешка
+	## уничтожается, её состояние менять нельзя.
+	if not is_inside_tree():
+		return
 	if multiplayer.get_remote_sender_id() != owner_peer:
 		return ## валидация: команды принимаются только от владельца пешки (ТЗ §16)
 	if seq <= _seq_in:
@@ -241,6 +246,8 @@ func sv_input(seq: int, move: Vector2, aim: float) -> void:
 func sv_request_action(action: String) -> void:
 	if not Net.is_server():
 		return
+	if not is_inside_tree():
+		return ## см. sv_input: защита от RPC в окно смены сцены
 	if multiplayer.get_remote_sender_id() != owner_peer:
 		return
 	match action:

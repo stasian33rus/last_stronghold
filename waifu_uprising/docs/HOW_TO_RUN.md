@@ -35,7 +35,8 @@ godot --headless --path waifu_uprising -- +dedicated +port=24560
 
 Параметры командной строки (после `--`):
 `+dedicated` · `+port=N` · `+ip=A.B.C.D` · `+autotest=host|client` · `+fast=1`
-(ускоренный баланс прогрессии/интермиссий — только для тестов).
+(ускоренный баланс прогрессии/интермиссий — только для тестов) ·
+`+rematch=1` (с `+autotest`: после победы сыграть второй матч — тест реванша).
 
 Для VPS: разрешите `udp/N` в файрволе (`ufw allow N/udp`, в облачных консолях —
 security group). Docker-обёртка планируется на Этапе 7 (ТЗ §17).
@@ -49,6 +50,11 @@ godot --headless --path waifu_uprising res://tests/smoke_test.tscn
 # Интеграционный сетевой тест (хост+клиент, полный матч 4 волны с ботами):
 waifu_uprising/tests/run_net_test.sh 24560 /путь/к/godot
 # логи: /tmp/net_host.log, /tmp/net_client.log; «NET_TEST=PASS» = успех
+
+# Тест РЕВАНША (хост+клиент, два полных матча подряд — перезапуск матча,
+# очистка между матчами, синхронизация; критерий «REMATCH_TEST=PASS»):
+waifu_uprising/tests/run_rematch_test.sh 24587 /путь/к/godot
+# логи: /tmp/rematch_host.log, /tmp/rematch_client.log
 
 # Dedicated-сервер + один клиент (вручную):
 godot --headless --path waifu_uprising -- +dedicated +port=24590 +fast=1 &

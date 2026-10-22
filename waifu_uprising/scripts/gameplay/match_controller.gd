@@ -176,6 +176,8 @@ func _broadcast_state() -> void:
 func cl_scene_ready() -> void:
 	if not Net.is_server():
 		return
+	if not is_inside_tree():
+		return ## окно смены сцены: multiplayer == null, контроллер уничтожается
 	notify_scene_ready(multiplayer.get_remote_sender_id())
 
 @rpc("authority", "call_local", "reliable")

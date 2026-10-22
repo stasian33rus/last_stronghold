@@ -371,7 +371,9 @@ func _test_full_match_flow() -> void:
 	probe_enemy.def = load("res://resources/enemies/fop.tres")
 	get_tree().current_scene.get_node(^"Entities").add_child(probe_enemy)
 	probe_enemy.position = Vector3(15.0, 0.5, 15.0)
-	probe_enemy.died_on_server.connect(sys_r._on_enemy_died_rewards)
+	## _register_enemy подключает И damage_taken (вклад), И died_on_server (награды) —
+	## как у врагов из волны. Ручное подключение died_on_server здесь было бы дублем
+	## (Godot логирует ERROR «already connected»), поэтому подключаем только через реестр.
 	sys_r._register_enemy(probe_enemy) ## учёт вклада урона, как у врагов из волны
 	await _frames(3)
 	st_r.xp = 0 ## гарантия: 20 XP не вызывают повышения уровня внутри проверки

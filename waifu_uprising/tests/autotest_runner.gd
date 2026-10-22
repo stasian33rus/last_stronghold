@@ -36,6 +36,8 @@ var _mc: MatchController
 var _offer_choice: StringName = &""
 var _offer_delay := 0.0
 var _intermission_served := false
+var _rematch_done := false
+var _matches_won := 0
 
 func _ready() -> void:
 	mode = Game.autotest_mode
@@ -270,10 +272,42 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 				problems.append("negative coins peer %d" % peer_id)
 			if pst.level < 1:
 				problems.append("invalid level peer %d" % peer_id)
-	if problems.is_empty():
-		_finish(true, "match victory verified (stats peers: %d, enemies seen: %d)" % [stats.size(), _enemies_seen])
-	else:
+	if not problems.is_empty():
 		_finish(false, "; ".join(problems))
+		return
+	_matches_won += 1
+	if Game.autotest_rematch and not _rematch_done:
+		_rematch_done = true
+		print("[AUTOTEST] Матч 1: ПОБЕДА подтверждена — запрашиваем реванш (перезапуск матча)")
+		_begin_rematch()
+		return
+	var reason := "match victory verified (stats peers: %d, enemies seen: %d)" % [stats.size(), _enemies_seen]
+	if _rematch_done:
+		reason = "REMATCH victory verified: 2/2 matches (stats peers: %d, enemies seen: %d)" % [stats.size(), _enemies_seen]
+	_finish(true, reason)
+
+## Реванш (ТЗ: «Ещё раз» — ре-матч тем же составом с новым seed). Хост запрашивает
+## новый матч; обе стороны должны пережить перезагрузку сцены, снова найти пешки,
+## подтвердить репликацию мира и победить во втором матче. Проверяет очистку
+## объектов/таймеров между матчами и синхронизацию состояния хост-клиент.
+func _begin_rematch() -> void:
+	_match_done = false
+	_pawn = null
+	_sys = null
+	_mc = null
+	_enemy_ref = null
+	_enemy_ref_pos = Vector3.ZERO
+	_seen_enemy_motion = false
+	_enemies_seen = 0
+	_intermission_served = false
+	_offer_choice = &""
+	_offer_delay = 0.0
+	_phase = "match"
+	_phase_t = 0.0
+	if mode == "host":
+		Net.request_rematch()
+	else:
+		print("[AUTOTEST] client: ожидаю реванш от хоста")
 
 func _finish(passed: bool, reason: String) -> void:
 	if _finished:
