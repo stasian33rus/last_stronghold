@@ -228,6 +228,24 @@ func _sv_set_ready(peer_id: int, value: bool) -> void:
 	if players.has(peer_id):
 		players[peer_id]["ready"] = bool(value)
 		_broadcast_lobby()
+		_maybe_dedicated_autostart()
+
+## Dedicated-сервер: хоста-игрока нет, поэтому стартуем автоматически,
+## когда все подключившиеся игроки готовы (с задержкой 3 с на опоздавших).
+var _dedicated_start_scheduled := false
+
+func _maybe_dedicated_autostart() -> void:
+	if not (is_dedicated and net_state == NetState.IN_LOBBY) or _dedicated_start_scheduled:
+		return
+	if not all_clients_ready():
+		return
+	_dedicated_start_scheduled = true
+	print("[Net] Dedicated: все игроки готовы, старт матча через 3 с")
+	get_tree().create_timer(3.0).timeout.connect(func() -> void:
+		_dedicated_start_scheduled = false
+		if net_state == NetState.IN_LOBBY and all_clients_ready():
+			start_match(Game.ARENA_SCENE)
+	)
 
 func _sv_set_class(peer_id: int, class_id: StringName) -> void:
 	if players.has(peer_id) and Classes.get_class_def(class_id) != null:

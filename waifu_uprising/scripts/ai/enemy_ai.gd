@@ -22,6 +22,11 @@ var _ctrl_vel := Vector3.ZERO ## управляемая составляющая
 var _lunge_dir := Vector3.ZERO
 var _strike_hitbox_on := false
 var _corpse_timer: float = -1.0
+## Анти-застревание (до NavMesh на Этапе 2): контроль смещения + боковой обход.
+var _stuck_probe_pos := Vector3.ZERO
+var _stuck_timer: float = 0.0
+var _strafe_timer: float = 0.0
+var _strafe_sign: float = 1.0
 
 @onready var health: HealthComponent = $Health
 @onready var hitbox: HitboxComponent = $Hitbox
@@ -33,6 +38,7 @@ func _ready() -> void:
 		push_error("[EnemyFop] Не задан EnemyDefinition")
 		return
 	add_to_group("enemy_units")
+	_stuck_probe_pos = global_position
 	health.setup(def.max_health)
 	hitbox.damage = def.attack_damage
 	hitbox.knockback_force = def.attack_knockback
@@ -117,6 +123,7 @@ func _chase(delta: float) -> void:
 	if _target == null or not is_instance_valid(_target) or _retarget_in <= 0.0:
 		_target = _acquire_target()
 		_retarget_in = 0.5
+	_update_stuck_detection(delta)
 	if _target == null:
 		_decay_ctrl(delta)
 		return
@@ -125,8 +132,13 @@ func _chase(delta: float) -> void:
 	var dist := to_target.length()
 	if dist > 0.05:
 		var dir := to_target / dist
+		if _strafe_timer > 0.0:
+			## Обход препятствия: скользим вбок, не теряя направления к цели.
+			var perp := Vector3(-dir.z, 0.0, dir.x) * _strafe_sign
+			dir = (dir * 0.35 + perp * 0.95).normalized()
 		## Лицом к цели (-Z вперёд).
-		var desired_yaw := atan2(-dir.x, -dir.z)
+		var face_dir := to_target / dist
+		var desired_yaw := atan2(-face_dir.x, -face_dir.z)
 		rotation.y = lerp_angle(rotation.y, desired_yaw, minf(1.0, delta * 10.0))
 		if dist > def.attack_range * 0.8:
 			_ctrl_vel.x = move_toward(_ctrl_vel.x, dir.x * def.move_speed, def.acceleration * delta)
@@ -135,6 +147,21 @@ func _chase(delta: float) -> void:
 			_decay_ctrl(delta)
 	if dist <= def.attack_range and _target_is_valid_target():
 		_set_state(State.WINDUP)
+
+## Если хотим бежать, но реально не смещаемся — включаем боковой обход.
+func _update_stuck_detection(delta: float) -> void:
+	_stuck_timer -= delta
+	if _strafe_timer > 0.0:
+		_strafe_timer -= delta
+	if _stuck_timer > 0.0:
+		return
+	_stuck_timer = 0.5
+	var wants_move := _ctrl_vel.length_squared() > (def.move_speed * 0.4) * (def.move_speed * 0.4)
+	if wants_move and global_position.distance_to(_stuck_probe_pos) < 0.35:
+		_strafe_timer = 0.7
+		if randf() < 0.5:
+			_strafe_sign = -_strafe_sign
+	_stuck_probe_pos = global_position
 
 func _target_is_valid_target() -> bool:
 	if _target == null or not is_instance_valid(_target):

@@ -26,6 +26,11 @@ var _enemy_ref_pos := Vector3.ZERO
 var _enemies_seen := 0
 var _match_done := false
 var _finished := false
+var _pawn_diag_printed := false
+var _bot_probe_pos := Vector3.ZERO
+var _bot_probe_t := 0.0
+var _bot_strafe_t := 0.0
+var _bot_strafe_sign := 1.0
 
 func _ready() -> void:
 	mode = Game.autotest_mode
@@ -82,7 +87,15 @@ func _find_pawn() -> void:
 		var p := candidate as PlayerPawn
 		if p != null and p.is_local_pawn():
 			_pawn = p
+			print("[AUTOTEST] local pawn найден: %s owner=%d my_id=%d" % [p.get_path(), p.owner_peer, Net.my_id()])
 			return
+	if not _pawn_diag_printed:
+		_pawn_diag_printed = true
+		var group := get_tree().get_nodes_in_group("player_pawns")
+		var ids := []
+		for g in group:
+			ids.append((g as PlayerPawn).owner_peer if g is PlayerPawn else "?")
+		print("[AUTOTEST] DIAG: пешка не найдена. my_id=%d group_size=%d owners=%s" % [Net.my_id(), group.size(), ids])
 
 ## Виртуальный ввод: защищаем Гигачада — целью выбираем врага, ближайшего к нему
 ## (а не к себе), по пути бьём любого, кто попал в радиус удара.
@@ -124,7 +137,26 @@ func _drive_pawn(delta: float) -> void:
 			if to_g.length() > 3.0:
 				var dir_g := to_g.normalized()
 				input["move"] = Vector2(dir_g.x, dir_g.z)
+	_apply_bot_unstick(delta, input)
 	_pawn.external_input = input
+
+## Анти-застревание бота: если двигаемся, но не смещаемся — обходим вбок.
+func _apply_bot_unstick(delta: float, input: Dictionary) -> void:
+	_bot_probe_t -= delta
+	if _bot_strafe_t > 0.0:
+		_bot_strafe_t -= delta
+	if _bot_probe_t <= 0.0:
+		_bot_probe_t = 0.5
+		var mv0: Vector2 = input["move"]
+		if mv0.length() > 0.3 and _pawn.global_position.distance_to(_bot_probe_pos) < 0.4:
+			_bot_strafe_t = 0.7
+			_bot_strafe_sign = -_bot_strafe_sign
+		_bot_probe_pos = _pawn.global_position
+	if _bot_strafe_t > 0.0:
+		var mv: Vector2 = input["move"]
+		if mv.length() > 0.1:
+			var perp := Vector2(-mv.y, mv.x).normalized() * _bot_strafe_sign
+			input["move"] = (mv * 0.35 + perp * 0.95).limit_length(1.0)
 
 ## Враг, ближайший к Гигачаду (защитная тактика); если Гигачад пал — ближайший к пешке.
 func _priority_enemy() -> Node3D:
@@ -176,8 +208,8 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 		_finish(false, "match ended in DEFEAT")
 		return
 	var problems: Array[String] = []
-	if Net.get_player_count() < 2 and Net.is_online():
-		problems.append("player_count < 2")
+	if Net.get_player_count() < 1 and Net.is_online():
+		problems.append("player_count < 1")
 	if _enemies_seen < 1:
 		problems.append("no enemies were spawned/seen")
 	if mode == "client" and not _seen_enemy_motion:

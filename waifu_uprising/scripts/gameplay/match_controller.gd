@@ -106,6 +106,10 @@ func _process(delta: float) -> void:
 			_last_countdown_int = ci
 			Events.local_announcement.emit(str(ci) if ci > 0 else "В БОЙ!", 0.9)
 			Sfx.play("count_go" if ci == 0 else "count", -6.0)
+		_state_acc += delta
+		if _state_acc >= STATE_BROADCAST_INTERVAL:
+			_state_acc = 0.0
+			_broadcast_state() ## клиенты видят цифры отсчёта
 		if countdown <= 0.0:
 			phase = Phase.FIGHT
 			match_time = 0.0

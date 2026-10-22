@@ -99,7 +99,8 @@ func _update_wave() -> void:
 		return
 	match _mc.phase:
 		MatchController.Phase.COUNTDOWN:
-			wave_label.text = "ПРИГОТОВЬТЕСЬ"
+			var n := int(ceil(_mc.countdown))
+			wave_label.text = ("ПРИГОТОВЬТЕСЬ: %d" % n) if n > 0 else "В БОЙ!"
 			enemies_label.text = ""
 		MatchController.Phase.FIGHT:
 			wave_label.text = "ВОЛНА %d" % maxi(1, _mc.wave_number)
