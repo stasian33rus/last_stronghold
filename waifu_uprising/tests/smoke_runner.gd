@@ -165,6 +165,64 @@ func _test_data_layers() -> void:
 		var scene := load(path) as PackedScene
 		_check(scene != null, "Сцена загружается: %s" % path)
 
+	## --- Этап 3: реестр 8 классов × 3 формы и визуальные слоты.
+	_check(Classes.definitions.size() == 8, "Реестр классов: 8 базовых классов (%d)" % Classes.definitions.size())
+	_check(Classes.get_all_defs().size() == 24, "Всего определений класс×форма: 24 (8×3) = %d" % Classes.get_all_defs().size())
+	var bchain := Classes.get_form_chain(&"berserk")
+	_check(bchain.size() == 3
+			and bchain[0].id == &"berserk" and bchain[1].id == &"berserk_f2" and bchain[2].id == &"berserk_f3"
+			and bchain[1].unlock_level == 3 and bchain[2].unlock_level == 5,
+			"Цепочка эволюции Берсерки I→II→III (открытие на уровнях 3 и 5)")
+	_check(Classes.is_selectable(&"berserk") and not Classes.is_selectable(&"berserk_f2")
+			and not Classes.is_selectable(&"valkyrie"),
+			"Лобби-валидация: только реализованные базовые классы (формы/заглушки отклоняются)")
+	## 24 визуальных слота: процедурная заглушка строится для каждого определения.
+	var vis_script := load("res://scripts/gameplay/player_visuals.gd")
+	var stub_scene := load("res://tests/assets/stub_model.tscn")
+	var slots_ok := 0
+	var slots_total := 0
+	var null_model_ok := true
+	for cdef in Classes.get_all_defs():
+		slots_total += 1
+		if cdef.model_scene != null:
+			null_model_ok = false
+		var holder := Node3D.new()
+		var vis := Node3D.new()
+		vis.set_script(vis_script)
+		add_child(holder)
+		holder.add_child(vis)
+		vis.rebuild(cdef)
+		var meshes := 0
+		var stack: Array = [vis]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			if n is MeshInstance3D:
+				meshes += 1
+			stack.append_array(n.get_children())
+		if meshes >= 3:
+			slots_ok += 1
+		remove_child(holder)
+		holder.free()
+	_check(slots_ok == slots_total and slots_total == 24,
+		"24/24 визуальных слота: заглушка строится для каждой формы (%d/%d)" % [slots_ok, slots_total])
+	_check(null_model_ok, "Все 24 слота .glb по умолчанию пусты (model_scene=null)")
+	## Слот model_scene: внешняя модель заменяет заглушку без правки кода (путь Inspector).
+	var bdef := Classes.get_class_def(&"berserk")
+	var holder2 := Node3D.new()
+	var vis2 := Node3D.new()
+	vis2.set_script(vis_script)
+	add_child(holder2)
+	holder2.add_child(vis2)
+	bdef.model_scene = stub_scene
+	vis2.rebuild(bdef)
+	var model_ok: bool = vis2.get_node_or_null(^"ModelRoot/Model") != null
+	bdef.model_scene = null ## восстановить общий ресурс
+	vis2.rebuild(bdef)
+	var proc_ok: bool = vis2.get_node_or_null(^"ModelRoot/Model") == null
+	remove_child(holder2)
+	holder2.free()
+	_check(model_ok and proc_ok, "model_scene: внешняя модель подключается и снимается без кода")
+
 # ------------------------------------------------------------------ полный матч
 
 func _test_full_match_flow() -> void:
@@ -387,6 +445,8 @@ func _test_full_match_flow() -> void:
 		"Награда за врага ровно один раз (дубль события бессилен): +%d монет, %d XP" % [st_r.coins - coins_r0, st_r.xp])
 	probe_enemy.queue_free()
 
+	await _test_evolution()
+
 	await _test_progression()
 
 	## --- Нет неограниченного роста объектов: после боя/прогрессии/UI-очистки.
@@ -411,6 +471,183 @@ func _test_full_match_flow() -> void:
 			enemies_left, cards, toasts, entities.get_child_count() if entities != null else -1]
 	_check(obj_after <= _obj_baseline + 150,
 		"Объекты в матче: разовый рост в пределах UI (%d до волны -> %d после, предел +%d)%s" % [_obj_baseline, obj_after, 150, diag])
+
+# ------------------------------------------------------------------ эволюция (Этап 3)
+
+func _spawn_probe_enemy(scene_path: String, def_path: String, pos: Vector3) -> EnemyBase:
+	var escene := load(scene_path) as PackedScene
+	var edef := load(def_path) as EnemyDefinition
+	if escene == null or edef == null:
+		return null
+	var foe: EnemyBase = escene.instantiate()
+	foe.def = edef
+	get_tree().current_scene.get_node(^"Entities").add_child(foe)
+	foe.global_position = pos
+	return foe
+
+## Пробный peer 777 не должен получать улучшения (чистота модификаторов статов):
+## закрываем предложение без применения — так же, как это сделал бы таймаут.
+func _close_offer(st: ProgressionState) -> void:
+	st.offer_active = false
+	st.offer_ids.clear()
+	st.pending_choices = 0
+
+## Детерминированные проверки трёх форм на отдельной пешке (peer 777):
+## серверная разблокировка по уровню, сохранение состояния при смене формы,
+## реальные трейты (комбо-волна, добивание, неистовство), идемпотентность,
+## поле "f" в снапшоте BodySync (репликация формы клиентам).
+func _test_evolution() -> void:
+	var arena := get_tree().current_scene
+	var sys := _prog()
+	if sys == null or not arena.has_method("spawn_player"):
+		_check(false, "Эволюция: арена и ProgressionSystem доступны")
+		return
+	var pawn: PlayerPawn = arena.spawn_player(777, "Эво-проба", &"berserk", Vector3(-15.0, 0.2, -15.0))
+	await _frames(3)
+	if pawn == null or not is_instance_valid(pawn):
+		_check(false, "Эволюция: пробная пешка заспавнена (peer 777)")
+		return
+	var st777 := ProgressionState.new()
+	st777.peer_id = 777
+	sys.states[777] = st777
+	_check(pawn.form_index == 0 and pawn.class_def.id == &"berserk", "Пешка стартует с формы I (berserk)")
+
+	## Уровень 2: порога (3) нет — форма не меняется.
+	sys.add_xp(777, 100)
+	_close_offer(st777)
+	await _frames(2)
+	_check(st777.level == 2 and pawn.form_index == 0, "Уровень 2: форма I сохранена (порог не достигнут)")
+
+	## Уровень 3 → форма II: статусы растут, состояние НЕ сбрасывается.
+	## Дать пешке приземлиться после спавна (y=0.2 → пол), чтобы сравнение
+	## позиции ловило телепорт от эволюции, а не физику падения.
+	await _wait_until(func(): return pawn.is_on_floor(), 2.0)
+	await _frames(4)
+	pawn.health.take_damage(Units.make_damage(50.0, null, 0, Vector3.ZERO, 0.0, pawn.global_position))
+	var pos_before := pawn.global_position
+	var hp_before := pawn.health.health ## 70 из 120
+	pawn._attack_cd_left = 0.5
+	sys.add_xp(777, 150)
+	_close_offer(st777)
+	await _frames(2)
+	_check(st777.level == 3 and pawn.form_index == 1 and pawn.class_def.id == &"berserk_f2",
+		"Уровень 3: серверная эволюция в форму II «Волна ярости»")
+	_check(pawn.global_position.distance_to(pos_before) < 0.1
+			and is_equal_approx(pawn.health.health, hp_before + 30.0),
+		"Эволюция сохраняет состояние: позиция та же, HP 70→100 (долечен дельтой максимума, не сброшен)")
+	_check(pawn._attack_cd_left > 0.0 and pawn.owner_peer == 777 and pawn.name_label.text.contains("II"),
+		"Эволюция не сбрасывает cooldown/сетевой id; подпись имени содержит «II»")
+	_check(is_equal_approx(pawn.hitbox.damage, 30.0) and is_equal_approx(pawn.health.max_health, 150.0),
+		"Форма II: реальные статусы — урон 30, макс.HP 150 (модификаторы 1.0)")
+	var vis_root := pawn.visuals.get_node_or_null(^"ModelRoot")
+	_check(vis_root != null and vis_root.get_child_count() > 0, "Форма II: визуальная модель перестроена")
+
+	## Уровень 5 → форма III «Абсолютная ярость».
+	sys.add_xp(777, 450)
+	_close_offer(st777)
+	await _frames(2)
+	_check(st777.level == 5 and pawn.form_index == 2 and pawn.class_def.id == &"berserk_f3",
+		"Уровень 5: эволюция в форму III «Абсолютная ярость»")
+
+	## Идемпотентность: повторные триггеры и макс. уровень не меняют финальную форму.
+	pawn.try_evolve_for_level(10)
+	pawn.try_evolve_for_level(99)
+	sys.add_xp(777, 1000000)
+	_close_offer(st777)
+	await _frames(2)
+	_check(pawn.form_index == 2 and pawn.class_def.id == &"berserk_f3",
+		"Финальная форма: повторные вызовы и максимум XP бессильны (идемпотентность)")
+
+	## Неистовство (канон §6.6): HP < 30% → урон ×1.25, cooldown ×0.75; выше — откат.
+	pawn.health.heal(pawn.health.max_health)
+	var dmg_calm: float = pawn.st["attack_damage"]
+	pawn.health.take_damage(Units.make_damage(pawn.health.max_health * 0.75, null, 0, Vector3.ZERO, 0.0, pawn.global_position))
+	await _frames(2)
+	_check(pawn._frenzy_active and is_equal_approx(pawn.st["attack_damage"], 36.0 * 1.25)
+			and is_equal_approx(pawn.st["attack_windup"], 0.12 * 0.75),
+		"Неистовство при HP<30%%: урон 45, windup 0.09 (факт %.1f)" % pawn.st["attack_damage"])
+	pawn.health.heal(pawn.health.max_health)
+	await _frames(2)
+	_check(not pawn._frenzy_active and is_equal_approx(pawn.st["attack_damage"], dmg_calm),
+		"Неистовство снято после восстановления HP (статы откатились)")
+
+	## Комбо-волна: удары 1-2 без волны, 3-й — радиальная волна вне радиуса ближнего боя.
+	var foe_a := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.7))
+	var foe_b := _spawn_probe_enemy("res://scenes/enemies/fop.tscn", "res://resources/enemies/fop.tres",
+		pawn.global_position + Vector3(3.4, 0.0, 0.0))
+	if foe_a == null or foe_b == null:
+		_check(false, "Эволюция: пробные враги для ударной волны")
+	else:
+		foe_a.apply_external_stun(4.0)
+		foe_b.apply_external_stun(4.0)
+		pawn.rotation.y = 0.0
+		pawn.external_input = {"move": Vector2.ZERO, "aim_yaw": 0.0, "press_attack": false, "press_dodge": false}
+		var b_hp0: float = foe_b.health.health
+		pawn._combo_hits = 0
+		pawn._attack_cd_left = 0.0
+		pawn.state = PlayerPawn.State.IDLE
+		pawn.try_attack()
+		await _seconds(0.6)
+		_check(foe_a.health.health < foe_a.health.max_health, "Ближний удар формы III достигает цели A")
+		_check(is_equal_approx(foe_b.health.health, b_hp0),
+			"Удар 1 (комбо 1): волны нет — цель B в 3.4 м не задета")
+		foe_a.global_position = pawn.global_position + Vector3(0.0, 0.0, -1.7)
+		foe_a.apply_external_stun(4.0)
+		foe_b.apply_external_stun(4.0)
+		pawn._combo_hits = 2 ## следующее попадание — 3-е → волна
+		pawn._attack_cd_left = 0.0
+		pawn.state = PlayerPawn.State.IDLE
+		pawn.try_attack()
+		await _seconds(0.6)
+		_check(foe_b.health.health < b_hp0,
+			"Удар 3 (комбо 3): ударная волна достала цель B вне ближнего радиуса (%.0f→%.0f)" % [b_hp0, foe_b.health.health])
+		pawn.external_input = null
+
+	## Добивание (форма III): цель с HP ≤ 35% получает ×1.6, полная — ×1.0 (один взмах по двум).
+	var brute := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(0.0, 0.0, -1.7))
+	var brute_full := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
+		pawn.global_position + Vector3(1.15, 0.0, -1.7))
+	if brute == null or brute_full == null:
+		_check(false, "Эволюция: пробные Громилы для добивания")
+	else:
+		brute.apply_external_stun(4.0)
+		brute_full.apply_external_stun(4.0)
+		## 180 HP → 63 (ровно 35%).
+		brute.health.take_damage(Units.make_damage(117.0, null, 0, Vector3.ZERO, 0.0, brute.global_position))
+		await _frames(2)
+		var hp_ex0: float = brute.health.health
+		var hp_fu0: float = brute_full.health.health
+		pawn.rotation.y = 0.0
+		pawn._combo_hits = 0
+		pawn._attack_cd_left = 0.0
+		pawn.state = PlayerPawn.State.IDLE
+		pawn.try_attack()
+		await _seconds(0.6)
+		var d_ex: float = hp_ex0 - brute.health.health
+		var d_fu: float = hp_fu0 - brute_full.health.health
+		_check(is_equal_approx(d_ex, 36.0 * 1.6), "Добивание: ×1.6 урона цели с 35%% HP (%.1f)" % d_ex)
+		_check(is_equal_approx(d_fu, 36.0), "Контроль: ×1.0 урона полнокровной цели (%.1f)" % d_fu)
+
+	## Репликация формы: поле "f" в снапшоте; клиентский обработчик не трогает статы.
+	var payload := pawn.get_sync_payload()
+	_check(int(payload.get("f", -1)) == pawn.form_index,
+		"Снапшот BodySync несёт текущую форму (f=%s)" % str(payload.get("f")))
+	var dmg_server: float = pawn.st["attack_damage"]
+	pawn.apply_sync_payload({"f": 0}) ## как клиент при получении снапшота
+	_check(pawn.form_index == 0 and is_equal_approx(pawn.st["attack_damage"], dmg_server)
+			and pawn.class_def.id == &"berserk",
+		"Применение формы из снапшота: только визуал/подпись, серверные статы не пересчитываются")
+	pawn.apply_sync_payload({"f": 2})
+
+	## Уборка пробных сущностей.
+	for e in [foe_a, foe_b, brute, brute_full]:
+		if e != null and is_instance_valid(e):
+			e.queue_free()
+	pawn.queue_free()
+	sys.states.erase(777)
+	await _frames(3)
 
 # ------------------------------------------------------------------ прогрессия
 
@@ -515,14 +752,19 @@ func _test_progression() -> void:
 		_check(total_levels == 1, "Второй игрок применил улучшение независимо")
 
 	## Эффект улучшения РЕАЛЬНО меняет характеристики (детерминированно: iron_body).
+	## Формульная проверка (Этап 3): макс.HP обязан ТОЧНО равняться базе текущей
+	## формы × серверные модификаторы — работает при любой форме/накопленных
+	## улучшениях (старый порог «> ×1.25» завис от случайной истории забега).
 	var pawn := _local_pawn()
 	if pawn != null:
 		var hp_max_before := pawn.health.max_health
 		st.upgrade_levels[&"iron_body"] = int(st.upgrade_levels.get(&"iron_body", 0)) + 2
 		sys._refresh_pawn(998, p2) ## у peer 998 пешки нет — не падать
 		sys._refresh_pawn(1, st)
-		_check(pawn.health.max_health > hp_max_before * 1.25,
-			"iron_body ×2 реально повысил макс. HP (%.0f -> %.0f)" % [hp_max_before, pawn.health.max_health])
+		var expected_max: float = pawn.class_def.max_health * float(sys.compute_mods(st)["max_health_mult"])
+		_check(is_equal_approx(pawn.health.max_health, expected_max) and pawn.health.max_health > hp_max_before,
+			"iron_body ×2 реально повысил макс. HP и совпал с формулой база×моды (%.0f -> %.0f = %.0f)" % [
+				hp_max_before, pawn.health.max_health, expected_max])
 
 	## Неавторизованные прямые вызовы клиентских RPC (sender=0 offline) — без эффекта.
 	var xp_before := st.xp

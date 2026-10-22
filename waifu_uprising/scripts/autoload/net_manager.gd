@@ -248,7 +248,9 @@ func _maybe_dedicated_autostart() -> void:
 	)
 
 func _sv_set_class(peer_id: int, class_id: StringName) -> void:
-	if players.has(peer_id) and Classes.get_class_def(class_id) != null:
+	## Валидация (Этап 3): принимаются только РЕАЛИЗОВАННЫЕ базовые формы I —
+	## id форм II/III и заглушки классов из очереди разработки отклоняются.
+	if players.has(peer_id) and Classes.is_selectable(class_id):
 		players[peer_id]["class_id"] = class_id
 		_broadcast_lobby()
 

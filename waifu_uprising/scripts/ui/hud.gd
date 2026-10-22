@@ -15,6 +15,7 @@ var _offer_ids: Array = []
 var _offer_deadline_msec: int = 0
 var _buffs_shown_hash: int = 0
 var _local_prog: Dictionary = {}
+var _local_prog_level: int = 0
 
 @onready var giga_label: Label = $TopCenter/GigaLabel
 @onready var giga_health_back: ColorRect = $TopCenter/GigaHealthBack
@@ -71,6 +72,7 @@ func _ready() -> void:
 	Events.upgrade_offer_closed.connect(_on_offer_closed)
 	Events.progression_updated.connect(func(payload: Dictionary) -> void: _local_prog = payload)
 	Events.shop_result_msg.connect(_on_shop_result)
+	Events.unit_evolved.connect(_on_unit_evolved)
 	var mcs := get_tree().get_nodes_in_group("match_controller")
 	_mc = mcs[0] if mcs.size() > 0 else null
 	var gigas := get_tree().get_nodes_in_group("gigachad")
@@ -111,12 +113,28 @@ func _find_local_pawn(delta: float) -> void:
 	for candidate in get_tree().get_nodes_in_group("player_pawns"):
 		if candidate is PlayerPawn and candidate.is_local_pawn():
 			_pawn = candidate
-			local_name_label.text = "%s — %s" % [_pawn.player_name, _display_class(_pawn.class_id)]
+			_refresh_local_name()
 			return
 
-func _display_class(class_id: StringName) -> String:
-	var def := Classes.get_class_def(class_id)
-	return def.display_name if def != null else String(class_id)
+func _refresh_local_name() -> void:
+	if _pawn == null or not is_instance_valid(_pawn):
+		return
+	local_name_label.text = "%s — %s" % [_pawn.player_name, _display_class(_pawn)]
+	if _local_prog_level > 0:
+		local_name_label.text += " · Ур. %d" % _local_prog_level
+
+## Имя класса с текущей формой эволюции (форма I — просто класс).
+func _display_class(pawn: PlayerPawn) -> String:
+	var base := Classes.get_class_def(pawn.class_id)
+	var base_name := base.display_name if base != null else String(pawn.class_id)
+	if pawn.form_index > 0 and pawn.class_def != null:
+		return "%s · %s" % [base_name, pawn.class_def.display_name]
+	return base_name
+
+## Эволюция локальной пешки — мгновенно обновить подпись (без ожидания payload).
+func _on_unit_evolved(unit: Node, _form_index: int, _form_name: String) -> void:
+	if unit == _pawn:
+		_refresh_local_name()
 
 func _update_giga() -> void:
 	if _giga == null or not is_instance_valid(_giga):
@@ -274,8 +292,9 @@ func _update_progression() -> void:
 	xp_fill.offset_right = xp_back.size.x * clampf(float(xp) / float(xp_need), 0.0, 1.0)
 	coins_label.text = "Монеты: %d" % int(payload.get("coins", 0))
 	_update_upgrades_list(payload)
+	_local_prog_level = level
 	if _pawn != null and is_instance_valid(_pawn):
-		local_name_label.text = "%s — %s · Ур. %d" % [_pawn.player_name, _display_class(_pawn.class_id), level]
+		local_name_label.text = "%s — %s · Ур. %d" % [_pawn.player_name, _display_class(_pawn), level]
 	_update_buffs(payload)
 
 func _update_buffs(payload: Dictionary) -> void:

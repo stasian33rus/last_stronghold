@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+
+[resource]
+script = ExtResource("1_cls")
+id = &"idol_f3"
+display_name = "Рейв-богиня"
+description = "Форма III класса «Идол». Данные и визуальный слот подготовлены; уникальные механики формы появятся на этапе класса (очередь в docs/CLASS_MATRIX.md)."
+color = Color(0.35, 0.85, 0.95, 1.0)
+form_index = 2
+base_id = &"idol"
+unlock_level = 5
+implemented = false
+max_health = 168
+move_speed = 7.704
+acceleration = 45
+friction = 40
+jump_velocity = 0.0
+attack_damage = 24.3
+attack_range = 2.5
+attack_arc_deg = 140
+attack_windup = 0.12
+attack_active = 0.11
+attack_recover = 0.2
+attack_cooldown = 0.12
+attack_knockback = 9.45
+attack_move_lock = 0.5
+dodge_speed = 16
+dodge_duration = 0.22
+dodge_cooldown = 1
+dodge_iframes = 0.28
+respawn_time = 5.0
+respawn_health_factor = 0.6
+xp_curve_base = 100.0
+evolution_chain = Array[Resource]([])
+model_scene = null
+visual_weapon = 6
+visual_hair = 2
+visual_hair_color = Color(1.0, 0.65, 0.85, 1.0)
+visual_accent = Color(1.0, 0.5, 0.8, 1.0)
+visual_glow = 1.6
+visual_scale = 1.06

@@ -69,6 +69,15 @@ func _build_sounds() -> void:
 	]))
 	_streams["count"] = _make(_tone(0.08, 880.0, 0.35))
 	_streams["count_go"] = _make(_tone(0.22, 1320.0, 0.4))
+	_streams["evolve"] = _make(_mix([
+		_arpeggio([392.0, 523.25, 659.25, 783.99, 1046.5, 1318.5], 0.09, 0.45),
+		_tone(0.7, 120.0, 0.35, 480.0),
+		_noise_burst(0.35, 0.18, 800.0, 3200.0),
+	]))
+	_streams["shockwave"] = _make(_mix([
+		_noise_burst(0.22, 0.6, 400.0, 70.0),
+		_tone(0.24, 95.0, 0.55, 45.0),
+	]))
 	_streams["victory"] = _make(_arpeggio([523.25, 659.25, 783.99, 1046.5], 0.14, 0.5))
 	_streams["defeat"] = _make(_arpeggio([392.0, 311.13, 233.08], 0.24, 0.5))
 	_streams["ui"] = _make(_tone(0.05, 660.0, 0.25))

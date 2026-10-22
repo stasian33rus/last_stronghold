@@ -1,6 +1,6 @@
 class_name PlayerPawn
 extends CharacterBody3D
-## Пешка игрока (Этап 1 — класс «Берсерка»).
+## Пешка игрока (Этап 3 — 8 классов × 3 формы, единая боевая логика).
 ## Сетевая модель (ТЗ §16):
 ##  - сервер симулирует движение/бой ВСЕХ пешек (авторитет);
 ##  - клиент-владелец лишь отправляет команды ввода (unreliable_ordered + reliable для действий);
@@ -15,6 +15,8 @@ const AIM_PLANE_Y: float = 1.0
 var team: int = Units.Team.HERO
 var owner_peer: int = 1
 var player_name: String = "Игрок"
+## class_id — ВСЕГДА id базовой формы (из лобби); текущая форма — form_index,
+## а class_def указывает на ClassDefinition активной формы (I/II/III).
 var class_id: StringName = &"berserk"
 var class_def: ClassDefinition
 
@@ -24,6 +26,12 @@ var aim_yaw: float = 0.0
 var attack_id: int = 0
 var kills: int = 0
 var damage_dealt: float = 0.0
+## Текущая форма эволюции (0 = I, 1 = II, 2 = III) — реплицируется полем "f".
+var form_index: int = 0
+
+## Трейты форм (сервер): счётчик комбо для ударной волны и режим неистовства.
+var _combo_hits: int = 0
+var _frenzy_active: bool = false
 
 ## Внешний источник ввода (автотесты / будущие AI-напарники). Если задан — заменяет Input.
 var external_input: Variant = null
@@ -61,21 +69,40 @@ func _ready() -> void:
 	if class_def == null:
 		push_error("[PlayerPawn] Класс %s не найден" % class_id)
 		return
+	## Надёжность: пешка всегда стартует с базовой формы I, даже если в данных
+	## class_id ошибочно указывает на форму II/III (лобби такие id отклоняет).
+	if class_def.form_index != 0:
+		class_id = class_def.base_id
+		class_def = Classes.get_form_def(class_id, 0)
+		if class_def == null:
+			push_error("[PlayerPawn] Базовая форма не найдена для %s" % class_id)
+			return
+	form_index = 0
 	add_to_group("player_pawns")
 	add_to_group("hero_units")
 	_build_base_stats()
 	health.setup(st["max_health"])
 	health.died.connect(_on_died)
+	health.health_changed.connect(_update_frenzy)
 	hitbox.damage = st["attack_damage"]
 	hitbox.knockback_force = st["attack_knockback"]
 	hitbox.owner_team = Units.Team.HERO
 	var hb_shape := hitbox.get_node_or_null(^"CollisionShape3D")
 	if hb_shape != null:
 		_hitbox_base_scale = hb_shape.scale
-	name_label.text = player_name
+	_update_name_label()
+	_rebuild_visuals()
 	if is_local_pawn():
 		camera_rig.activate_for(self)
 		Events.local_pawn_ready.emit(self)
+
+func _update_name_label() -> void:
+	var suffix := "" if form_index == 0 else (" • II" if form_index == 1 else " • III")
+	name_label.text = player_name + suffix
+
+func _rebuild_visuals() -> void:
+	if visuals != null and visuals.has_method("rebuild"):
+		visuals.rebuild(class_def)
 
 func _build_base_stats() -> void:
 	var d := class_def
@@ -97,6 +124,16 @@ func _build_base_stats() -> void:
 		"dodge_iframes": d.dodge_iframes,
 		"respawn_time": d.respawn_time,
 		"respawn_health_factor": d.respawn_health_factor,
+		## Трейты форм (данные ClassDefinition; нейтральны, если не заданы).
+		"shockwave_every_n_hits": d.shockwave_every_n_hits,
+		"shockwave_radius": d.shockwave_radius,
+		"shockwave_damage_mult": d.shockwave_damage_mult,
+		"shockwave_knockback": d.shockwave_knockback,
+		"execute_threshold": d.execute_threshold,
+		"execute_damage_mult": d.execute_damage_mult,
+		"frenzy_hp_threshold": d.frenzy_hp_threshold,
+		"frenzy_damage_mult": d.frenzy_damage_mult,
+		"frenzy_attack_cd_mult": d.frenzy_attack_cd_mult,
 	}
 
 ## Сервер применяет прогрессию (улучшения + баффы магазина).
@@ -113,9 +150,12 @@ func refresh_effective_stats() -> void:
 	_build_base_stats()
 	st["max_health"] = d.max_health * float(m.get("max_health_mult", 1.0))
 	st["move_speed"] = d.move_speed * float(m.get("speed_mult", 1.0))
-	st["attack_damage"] = d.attack_damage * float(m.get("damage_mult", 1.0))
+	## Неистовство (форма III Берсерки): множители поверх прогрессии, пока HP низкое.
+	var frenzy_dmg := float(st["frenzy_damage_mult"]) if _frenzy_active else 1.0
+	var frenzy_cd := float(st["frenzy_attack_cd_mult"]) if _frenzy_active else 1.0
+	st["attack_damage"] = d.attack_damage * float(m.get("damage_mult", 1.0)) * frenzy_dmg
 	st["attack_knockback"] = d.attack_knockback * float(m.get("kb_mult", 1.0))
-	var cd := float(m.get("attack_cd_mult", 1.0))
+	var cd := float(m.get("attack_cd_mult", 1.0)) * frenzy_cd
 	st["attack_windup"] = maxf(0.03, d.attack_windup * cd)
 	st["attack_active"] = maxf(0.05, d.attack_active * cd)
 	st["attack_recover"] = maxf(0.03, d.attack_recover * cd)
@@ -131,6 +171,8 @@ func refresh_effective_stats() -> void:
 	health.incoming_damage_multiplier = float(m.get("damage_taken_mult", 1.0))
 	hitbox.damage = st["attack_damage"]
 	hitbox.knockback_force = st["attack_knockback"]
+	hitbox.execute_threshold = float(st["execute_threshold"])
+	hitbox.execute_mult = float(st["execute_damage_mult"])
 	var hb_shape := hitbox.get_node_or_null(^"CollisionShape3D")
 	if hb_shape != null:
 		hb_shape.scale = _hitbox_base_scale * clampf(float(m.get("range_mult", 1.0)), 0.5, 2.0)
@@ -139,6 +181,88 @@ func effective_max_health() -> float:
 	if st.has("max_health"):
 		return float(st["max_health"])
 	return class_def.max_health if class_def != null else 100.0
+
+# ------------------------------------------------------------------ эволюция (Этап 3)
+
+## Серверная проверка условия эволюции (уровень прогрессии). Вызывается
+## ProgressionSystem после повышения уровня. Идемпотентна: повторные вызовы
+## на уже открытой/финальной форме ничего не делают. Возвращает число
+## состоявшихся эволюций (0 или больше — возможен скачок сразу на 2 уровня).
+func try_evolve_for_level(level: int) -> int:
+	if not Net.is_server() or class_def == null or not is_inside_tree():
+		return 0
+	var evolved := 0
+	while true:
+		var next_def := Classes.get_next_form(class_id, form_index)
+		if next_def == null:
+			break
+		if level < next_def.unlock_level:
+			break
+		_apply_form(next_def)
+		evolved += 1
+	return evolved
+
+## Серверное применение формы: данные и статы меняются здесь; узел пешки НЕ
+## пересоздаётся — HP, позиция, улучшения, cooldown, owner_peer и сетевой путь
+## спавнера сохраняются (безопасная замена модели и характеристик).
+func _apply_form(new_def: ClassDefinition) -> void:
+	class_def = new_def
+	form_index = new_def.form_index
+	## Пересчёт эффективных статов от НОВОЙ базы × накопленные модификаторы.
+	## Текущее HP не сбрасывается: при росте максимума refresh долечивает дельту
+	## (то же поведение, что у улучшения iron_body).
+	refresh_effective_stats()
+	_update_name_label()
+	_rebuild_visuals()
+	Events.unit_evolved.emit(self, form_index, new_def.display_name)
+	print("[PlayerPawn] ЭВОЛЮЦИЯ peer %d: %s -> форма %d «%s»" % [owner_peer, class_id, form_index + 1, new_def.display_name])
+	fx_evolve.rpc(new_def.display_name)
+
+## Неистовство (канон §6.6: бонусы при потере собственного здоровья) — только сервер.
+## Подключено к health_changed(current, maximum); аргументы не нужны — состояние
+## читается из health напрямую. Вызывается также напрямую из тестов.
+func _update_frenzy(_current: float = 0.0, _maximum: float = 0.0) -> void:
+	if not Net.is_server() or class_def == null:
+		return
+	var threshold := float(st.get("frenzy_hp_threshold", 0.0))
+	var want := false
+	if threshold > 0.0 and not health.is_dead:
+		want = health.health_factor() < threshold
+	if want == _frenzy_active:
+		return
+	_frenzy_active = want
+	refresh_effective_stats()
+	if visuals != null and visuals.has_method("set_frenzy"):
+		visuals.set_frenzy(want)
+
+## Ударная волна (канон §6.6): серверный радиальный урон и отбрасывание
+## вокруг пешки. Урон идёт через обычную pipeline (Units.make_damage ->
+## HealthComponent), поэтому вклад в XP/статистику/награды учитывается штатно.
+func _server_shockwave(radius: float, amount: float, kb_force: float) -> void:
+	## is_inside_tree: физика может доставить area-сигнал пешке, уже выведенной
+	## из дерева при смене сцены (реванш) — get_tree()/rpc там недопустимы.
+	if not Net.is_server() or amount <= 0.0 or not is_inside_tree():
+		return
+	var center := global_position
+	var targets: Array = []
+	targets.append_array(get_tree().get_nodes_in_group("enemy_units"))
+	targets.append_array(get_tree().get_nodes_in_group("destructibles")) ## форма III «разрушает укрытия»
+	for node in targets:
+		var body := node as Node3D
+		if body == null or not is_instance_valid(body):
+			continue
+		var th := body.get_node_or_null(^"Health") as HealthComponent
+		if th == null or th.is_dead:
+			continue
+		var to_t := body.global_position - center
+		to_t.y = 0.0
+		if to_t.length() > radius:
+			continue
+		var dir := to_t.normalized() if to_t.length_squared() > 0.001 else -global_transform.basis.z
+		var dmg := Units.make_damage(amount, self, owner_peer, dir, kb_force, body.global_position)
+		if th.take_damage(dmg) and body.has_method("on_damage_received"):
+			body.call("on_damage_received", dmg)
+	fx_shockwave.rpc(radius)
 
 func is_local_pawn() -> bool:
 	return owner_peer == Net.my_id()
@@ -388,6 +512,14 @@ func on_hit_landed(target: Node, dmg: Dictionary) -> void:
 			if _lifesteal > 0.0:
 				health.heal(effective_max_health() * _lifesteal)
 	Events.server_hit_landed.emit(self, target, dmg)
+	## Комбо-трейт формы II+: каждый N-й подтверждённый удар — ударная волна.
+	var every := int(st.get("shockwave_every_n_hits", 0))
+	if every > 0 and is_inside_tree():
+		_combo_hits += 1
+		if _combo_hits % every == 0:
+			_server_shockwave(float(st["shockwave_radius"]),
+				float(st["attack_damage"]) * float(st["shockwave_damage_mult"]),
+				float(st["shockwave_knockback"]))
 
 func on_damage_received(dmg: Dictionary) -> void:
 	if Net.is_server():
@@ -437,6 +569,7 @@ func get_sync_payload() -> Dictionary:
 		"hp": health.health,
 		"dead": health.is_dead,
 		"aid": attack_id,
+		"f": form_index,
 	}
 
 func apply_sync_payload(payload: Dictionary) -> void:
@@ -456,6 +589,20 @@ func apply_sync_payload(payload: Dictionary) -> void:
 	if new_aid != attack_id:
 		attack_id = new_aid
 		Events.sync_attack_started.emit(self)
+	var new_form := int(payload.get("f", form_index))
+	if new_form != form_index:
+		_set_form_replicated(new_form)
+
+## Клиентская репликация формы: меняются ТОЛЬКО визуал и подпись (статы и бой
+## считает сервер). Def формы резолвится из того же реестра, что и на сервере.
+func _set_form_replicated(new_form: int) -> void:
+	form_index = new_form
+	var fdef := Classes.get_form_def(class_id, new_form)
+	if fdef != null:
+		class_def = fdef
+	_update_name_label()
+	_rebuild_visuals()
+	Events.unit_evolved.emit(self, form_index, fdef.display_name if fdef != null else "")
 
 # ------------------------------------------------------------------ косметические RPC (локально на каждом пире)
 
@@ -486,3 +633,17 @@ func fx_down() -> void:
 func fx_respawn() -> void:
 	if visuals.has_method("play_respawn"):
 		visuals.play_respawn()
+
+## Эволюция — зрелищное событие для ВСЕХ пиров (ТЗ §7: коротко, без кат-сцены).
+@rpc("authority", "call_local", "reliable")
+func fx_evolve(form_name: String) -> void:
+	VisualFx.ring_burst(global_position, Color(1.0, 0.55, 0.85), 6.0)
+	VisualFx.ring_burst(global_position + Vector3(0.0, 0.5, 0.0), Color(1.0, 0.85, 0.35), 4.0)
+	Sfx.play("evolve", -2.0)
+	Events.local_announcement.emit("ЭВОЛЮЦИЯ: %s → %s!" % [player_name, form_name], 2.0)
+
+## Ударная волна (трейт форм II/III) — локальная косметика на каждом пире.
+@rpc("authority", "call_local", "unreliable")
+func fx_shockwave(radius: float) -> void:
+	VisualFx.ring_burst(global_position, Color(1.0, 0.45, 0.3), clampf(radius * 0.8, 2.0, 6.0))
+	Sfx.play("shockwave", -6.0)

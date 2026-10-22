@@ -7,6 +7,10 @@ extends Area3D
 @export var knockback_force: float = 6.0
 @export var hit_once_per_activation: bool = true
 @export var owner_team: int = Units.Team.NONE
+## Добивание (трейт формы III Берсерки): если HP-доля цели <= execute_threshold,
+## урон этой цели умножается на execute_mult. 0.0 = трейт выключен.
+@export var execute_threshold: float = 0.0
+@export var execute_mult: float = 1.0
 
 var is_active: bool = false
 var _hit_targets: Dictionary = {}
@@ -65,7 +69,14 @@ func _on_area_entered(area: Area3D) -> void:
 		kb_dir = kb_dir.normalized()
 	var peer_value: Variant = attacker.get("owner_peer") if attacker != null else null
 	var attacker_peer: int = int(peer_value) if peer_value != null else 1
-	var dmg := Units.make_damage(damage, attacker, attacker_peer, kb_dir, knockback_force, hit_pos)
+	var amount := damage
+	if execute_threshold > 0.0 and execute_mult != 1.0:
+		var th := unit.get_node_or_null(^"Health") as HealthComponent
+		if th == null and unit.has_method("get_health"):
+			th = unit.get_health() as HealthComponent
+		if th != null and not th.is_dead and th.health_factor() <= execute_threshold:
+			amount *= execute_mult
+	var dmg := Units.make_damage(amount, attacker, attacker_peer, kb_dir, knockback_force, hit_pos)
 	hurtbox.receive_hit(dmg)
 	if attacker != null and attacker.has_method("on_hit_landed"):
 		attacker.on_hit_landed(unit, dmg)

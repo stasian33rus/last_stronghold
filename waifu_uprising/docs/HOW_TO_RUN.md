@@ -5,7 +5,9 @@
 ## 1. Игра через редактор (Windows/Linux, с графикой)
 
 1. Откройте Godot → Import → выберите `waifu_uprising/project.godot`.
-2. Нажмите **F5** (запуск главной сцены — главного меню).
+2. Нажмите **F5** (запуск главной сцены — главного меню). Класс в лобби —
+   «Берсерка» (единственный полностью реализованный; остальные 7 классов —
+   очередь разработки, см. `docs/CLASS_MATRIX.md`). Эволюция: уровни 3 и 5.
 3. Одиночная игра: **Создать комнату** → **Начать матч** (вы — хост listen-сервера).
 4. Управление: WASD — движение, мышь — прицел, ЛКМ/J — удар молотом,
    Shift/Space — рывок, колесо — зум камеры, Esc — выход в меню,
@@ -36,7 +38,8 @@ godot --headless --path waifu_uprising -- +dedicated +port=24560
 Параметры командной строки (после `--`):
 `+dedicated` · `+port=N` · `+ip=A.B.C.D` · `+autotest=host|client` · `+fast=1`
 (ускоренный баланс прогрессии/интермиссий — только для тестов) ·
-`+rematch=1` (с `+autotest`: после победы сыграть второй матч — тест реванша).
+`+rematch=1` (с `+autotest`: после победы сыграть второй матч — тест реванша) ·
+`+evolve=1` (с `+autotest`: серверная эволюция хоста и проверка её репликации клиенту).
 
 Для VPS: разрешите `udp/N` в файрволе (`ufw allow N/udp`, в облачных консолях —
 security group). Docker-обёртка планируется на Этапе 7 (ТЗ §17).
@@ -44,7 +47,7 @@ security group). Docker-обёртка планируется на Этапе 7 
 ## 4. Тесты (headless, без графики)
 
 ```bash
-# Offline-дымотест Этапов 1–2 — 120 проверок, exit code 0 = успех:
+# Offline-дымотест Этапов 1–3 — 145 проверок, exit code 0 = успех:
 godot --headless --path waifu_uprising res://tests/smoke_test.tscn
 
 # Интеграционный сетевой тест (хост+клиент, полный матч 4 волны с ботами):
@@ -55,6 +58,11 @@ waifu_uprising/tests/run_net_test.sh 24560 /путь/к/godot
 # очистка между матчами, синхронизация; критерий «REMATCH_TEST=PASS»):
 waifu_uprising/tests/run_rematch_test.sh 24587 /путь/к/godot
 # логи: /tmp/rematch_host.log, /tmp/rematch_client.log
+
+# Тест ЭВОЛЮЦИИ по сети (хост эволюционирует, клиент видит форму через
+# репликацию BodySync; критерий «EVOLVE_TEST=PASS»):
+waifu_uprising/tests/run_evolve_test.sh 24592 /путь/к/godot
+# логи: /tmp/evolve_host.log, /tmp/evolve_client.log
 
 # Dedicated-сервер + один клиент (вручную):
 godot --headless --path waifu_uprising -- +dedicated +port=24590 +fast=1 &

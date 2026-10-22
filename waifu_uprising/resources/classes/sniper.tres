@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+[ext_resource type="Resource" path="res://resources/classes/sniper_f2.tres" id="2_f2"]
+[ext_resource type="Resource" path="res://resources/classes/sniper_f3.tres" id="3_f3"]
+
+[resource]
+script = ExtResource("1_cls")
+id = &"sniper"
+display_name = "Снайперша"
+description = "Точечное уничтожение: пробивающие выстрелы, метки на элите (GAME_DESIGN §6.5). ЗАГЛУШКА: базовый бой работает; дальний бой/рикошеты/метки — очередь разработки."
+color = Color(0.3, 0.5, 0.35, 1.0)
+form_index = 0
+base_id = &"sniper"
+unlock_level = 0
+implemented = false
+max_health = 90
+move_speed = 7
+acceleration = 45
+friction = 40
+jump_velocity = 0.0
+attack_damage = 30
+attack_range = 3.2
+attack_arc_deg = 90
+attack_windup = 0.2
+attack_active = 0.1
+attack_recover = 0.3
+attack_cooldown = 0.25
+attack_knockback = 10
+attack_move_lock = 0.65
+dodge_speed = 16
+dodge_duration = 0.2
+dodge_cooldown = 1
+dodge_iframes = 0.26
+respawn_time = 5.0
+respawn_health_factor = 0.6
+xp_curve_base = 100.0
+evolution_chain = Array[Resource]([ExtResource("2_f2"), ExtResource("3_f3")])
+model_scene = null
+visual_weapon = 7
+visual_hair = 3
+visual_hair_color = Color(0.2, 0.3, 0.25, 1.0)
+visual_accent = Color(0.8, 1.0, 0.6, 1.0)
+visual_glow = 0
+visual_scale = 1

@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/gameplay/player_controller.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/gameplay/player_visuals.gd" id="2_pvis"]
@@ -12,51 +12,6 @@
 [sub_resource type="CapsuleShape3D" id="shape_body_col"]
 radius = 0.4
 height = 1.7
-
-[sub_resource type="StandardMaterial3D" id="mat_outfit"]
-albedo_color = Color(0.72, 0.13, 0.33, 1)
-roughness = 0.55
-metallic = 0.1
-
-[sub_resource type="CapsuleMesh" id="mesh_body"]
-material = SubResource("mat_outfit")
-radius = 0.36
-height = 1.25
-
-[sub_resource type="StandardMaterial3D" id="mat_skin"]
-albedo_color = Color(1, 0.86, 0.76, 1)
-roughness = 0.7
-
-[sub_resource type="SphereMesh" id="mesh_head"]
-material = SubResource("mat_skin")
-radius = 0.24
-height = 0.48
-
-[sub_resource type="StandardMaterial3D" id="mat_hair"]
-albedo_color = Color(0.95, 0.2, 0.45, 1)
-roughness = 0.4
-
-[sub_resource type="SphereMesh" id="mesh_hair"]
-material = SubResource("mat_hair")
-radius = 0.27
-height = 0.54
-
-[sub_resource type="StandardMaterial3D" id="mat_steel"]
-albedo_color = Color(0.72, 0.75, 0.82, 1)
-metallic = 0.85
-roughness = 0.3
-
-[sub_resource type="BoxMesh" id="mesh_hammer_head"]
-material = SubResource("mat_steel")
-size = Vector3(0.42, 0.3, 0.52)
-
-[sub_resource type="StandardMaterial3D" id="mat_wood"]
-albedo_color = Color(0.42, 0.28, 0.18, 1)
-roughness = 0.8
-
-[sub_resource type="BoxMesh" id="mesh_handle"]
-material = SubResource("mat_wood")
-size = Vector3(0.08, 0.08, 1)
 
 [sub_resource type="SphereShape3D" id="shape_hitbox"]
 radius = 1.4
@@ -76,29 +31,6 @@ shape = SubResource("shape_body_col")
 
 [node name="Visuals" type="Node3D" parent="."]
 script = ExtResource("2_pvis")
-
-[node name="Body" type="MeshInstance3D" parent="Visuals"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-mesh = SubResource("mesh_body")
-
-[node name="Head" type="MeshInstance3D" parent="Visuals"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.62, 0)
-mesh = SubResource("mesh_head")
-
-[node name="Hair" type="MeshInstance3D" parent="Visuals"]
-transform = Transform3D(1.05, 0, 0, 0, 0.85, 0, 0, 0, 1.15, 0, 1.72, 0.05)
-mesh = SubResource("mesh_hair")
-
-[node name="WeaponPivot" type="Node3D" parent="Visuals"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, -0.1)
-
-[node name="Handle" type="MeshInstance3D" parent="Visuals/WeaponPivot"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
-mesh = SubResource("mesh_handle")
-
-[node name="HammerHead" type="MeshInstance3D" parent="Visuals/WeaponPivot"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.98)
-mesh = SubResource("mesh_hammer_head")
 
 [node name="Hitbox" type="Area3D" parent="."]
 collision_layer = 16

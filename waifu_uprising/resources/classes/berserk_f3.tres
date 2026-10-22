@@ -1,0 +1,52 @@
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+
+[resource]
+script = ExtResource("1_cls")
+id = &"berserk_f3"
+display_name = "Абсолютная ярость"
+description = "Форма III класса «Берсерка». Реальные механики: добивание ослабленных (×1.6), неистовство при HP<30% (+25% урон, −25% cooldown), усиленная волна и отбрасывание (канон §6.6 «Абсолютная ярость»)."
+color = Color(0.92, 0.25, 0.55, 1.0)
+form_index = 2
+base_id = &"berserk"
+unlock_level = 5
+implemented = false
+max_health = 190
+move_speed = 7.5
+acceleration = 45
+friction = 40
+jump_velocity = 0.0
+attack_damage = 36
+attack_range = 2.6
+attack_arc_deg = 120
+attack_windup = 0.12
+attack_active = 0.12
+attack_recover = 0.18
+attack_cooldown = 0.1
+attack_knockback = 14
+attack_move_lock = 0.45
+dodge_speed = 18
+dodge_duration = 0.22
+dodge_cooldown = 0.9
+dodge_iframes = 0.34
+respawn_time = 5.0
+respawn_health_factor = 0.6
+xp_curve_base = 100.0
+evolution_chain = Array[Resource]([])
+shockwave_every_n_hits = 3
+shockwave_radius = 5.5
+shockwave_damage_mult = 0.6
+shockwave_knockback = 13.0
+execute_threshold = 0.35
+execute_damage_mult = 1.6
+frenzy_hp_threshold = 0.3
+frenzy_damage_mult = 1.25
+frenzy_attack_cd_mult = 0.75
+model_scene = null
+visual_weapon = 1
+visual_hair = 1
+visual_hair_color = Color(0.95, 0.2, 0.45, 1.0)
+visual_accent = Color(1.0, 0.85, 0.35, 1.0)
+visual_glow = 1.6
+visual_scale = 1.06

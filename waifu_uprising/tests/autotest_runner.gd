@@ -38,12 +38,18 @@ var _offer_delay := 0.0
 var _intermission_served := false
 var _rematch_done := false
 var _matches_won := 0
+## Эволюция (+evolve=1): хост форсирует уровень и проверяет форму у себя,
+## клиент обязан увидеть форму ЧУЖОЙ пешки через репликацию BodySync ("f").
+var _evo_injected := false
+var _evo_local_form := -1
+var _evo_remote_form := -1
 
 func _ready() -> void:
 	mode = Game.autotest_mode
 	Game.autotest_started = true
 	Events.match_ended.connect(_on_match_ended)
 	Events.upgrade_offer_opened.connect(_on_offer_opened)
+	Events.unit_evolved.connect(_on_unit_evolved)
 	Net.connection_failed.connect(func(reason: String) -> void: _finish(false, "connection failed: %s" % reason))
 	match mode:
 		"host":
@@ -107,6 +113,7 @@ func _handle_progression(delta: float) -> void:
 			var pick := _offer_choice
 			_offer_choice = &""
 			_sys.request_choose(pick)
+	_inject_evolution_xp()
 	if _mc.phase == MatchController.Phase.INTERMISSION:
 		if not _intermission_served:
 			_intermission_served = true
@@ -115,6 +122,28 @@ func _handle_progression(delta: float) -> void:
 			_sys.request_wave_ready(true)
 	elif _mc.phase == MatchController.Phase.FIGHT:
 		_intermission_served = false
+
+func _on_unit_evolved(unit: Node, fidx: int, fname: String) -> void:
+	var is_local := _pawn != null and unit == _pawn
+	if is_local:
+		_evo_local_form = fidx
+		print("[AUTOTEST] EVOLUTION local: форма %d «%s» (peer %d)" % [fidx + 1, fname, Net.my_id()])
+	else:
+		_evo_remote_form = fidx
+		print("[AUTOTEST] EVOLUTION remote: увидели форму %d «%s» чужой пешки (репликация)" % [fidx + 1, fname])
+
+## Инъекция XP хостом (серверная операция): детерминированно доводит уровень до
+## порога эволюции (3) — клиент обязан получить форму через снапшоты BodySync.
+func _inject_evolution_xp() -> void:
+	if _evo_injected or mode != "host" or not Game.autotest_evolve:
+		return
+	if _sys == null or not is_instance_valid(_sys) or _mc == null or not is_instance_valid(_mc):
+		return
+	if _mc.phase != MatchController.Phase.FIGHT:
+		return
+	_evo_injected = true
+	print("[AUTOTEST] evolve-тест: хост инжектирует XP до уровня 3+ (серверный триггер эволюции)")
+	_sys.add_xp(Net.my_id(), 400)
 
 func _on_offer_opened(ids: Array, _deadline_msec: int) -> void:
 	if ids.size() > 0:
@@ -272,6 +301,17 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 				problems.append("negative coins peer %d" % peer_id)
 			if pst.level < 1:
 				problems.append("invalid level peer %d" % peer_id)
+	if Game.autotest_evolve and _matches_won == 0:
+		## Проверяется в первом матче evolve-прогона (_matches_won ещё не увеличен).
+		if mode == "host":
+			var host_form: int = _pawn.form_index if (_pawn != null and is_instance_valid(_pawn)) else -1
+			if not _evo_injected:
+				problems.append("evolve: XP injection never ran")
+			if host_form < 1:
+				problems.append("evolve: host pawn form=%d, expected >=1 (форма II)" % host_form)
+		else:
+			if _evo_remote_form < 1:
+				problems.append("evolve: client never saw remote form change (репликация 'f')")
 	if not problems.is_empty():
 		_finish(false, "; ".join(problems))
 		return

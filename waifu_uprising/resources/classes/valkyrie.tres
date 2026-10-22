@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+[ext_resource type="Resource" path="res://resources/classes/valkyrie_f2.tres" id="2_f2"]
+[ext_resource type="Resource" path="res://resources/classes/valkyrie_f3.tres" id="3_f3"]
+
+[resource]
+script = ExtResource("1_cls")
+id = &"valkyrie"
+display_name = "Валькирия"
+description = "Ближний бой: меч/парные клинки, рывок с круговым ударом, парирования (GAME_DESIGN §6.1). ЗАГЛУШКА: базовый бой работает; активный навык, парирования и зеркальные копии — очередь разработки."
+color = Color(0.55, 0.7, 0.95, 1.0)
+form_index = 0
+base_id = &"valkyrie"
+unlock_level = 0
+implemented = false
+max_health = 110
+move_speed = 7.6
+acceleration = 48
+friction = 42
+jump_velocity = 0.0
+attack_damage = 22
+attack_range = 2.5
+attack_arc_deg = 130
+attack_windup = 0.1
+attack_active = 0.1
+attack_recover = 0.18
+attack_cooldown = 0.1
+attack_knockback = 7
+attack_move_lock = 0.45
+dodge_speed = 17
+dodge_duration = 0.22
+dodge_cooldown = 0.9
+dodge_iframes = 0.3
+respawn_time = 5.0
+respawn_health_factor = 0.6
+xp_curve_base = 100.0
+evolution_chain = Array[Resource]([ExtResource("2_f2"), ExtResource("3_f3")])
+model_scene = null
+visual_weapon = 2
+visual_hair = 1
+visual_hair_color = Color(0.75, 0.85, 1.0, 1.0)
+visual_accent = Color(0.9, 0.95, 1.0, 1.0)
+visual_glow = 0
+visual_scale = 1

@@ -11,6 +11,9 @@ signal server_hit_landed(attacker: Node, target: Node, damage: Dictionary)
 ## Реплицированное состояние сущности изменилось (для визуала/HUD).
 signal sync_state_changed(unit: Node, new_state: int)
 signal sync_attack_started(unit: Node)
+## Эволюция формы (Этап 3): эмитится на КАЖДОМ пире — на сервере из _apply_form,
+## на клиентах из репликации поля "f" (BodySync). unit — пешка, form_index 1/2.
+signal unit_evolved(unit: Node, form_index: int, form_name: String)
 
 ## Локальные косметические запросы (каждый пир исполняет у себя).
 signal local_hitstop_request(world_pos: Vector3, strength: float)

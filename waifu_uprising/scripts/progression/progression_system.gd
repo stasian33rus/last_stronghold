@@ -118,8 +118,19 @@ func add_xp(peer_id: int, amount: int) -> void:
 		st.xp = 0
 	if leveled:
 		_toast(peer_id, "УРОВЕНЬ %d! Выберите улучшение" % st.level, "levelup")
+		## Эволюция (Этап 3): сервер проверяет порог уровня после каждого уровня.
+		_check_evolution(peer_id, st.level)
 	_try_open_offer(peer_id)
 	sync_to(peer_id)
+
+## Серверный триггер эволюции: пешка сама проверяет цепочку форм (идемпотентно).
+func _check_evolution(peer_id: int, level: int) -> void:
+	if not is_inside_tree():
+		return ## окно смены сцены: система прогрессии уничтожается
+	var pawn := _pawn_of(peer_id)
+	if pawn == null or not is_instance_valid(pawn):
+		return
+	pawn.try_evolve_for_level(level)
 
 func add_coins(peer_id: int, amount: int, reason: String = "") -> void:
 	if not Net.is_server() or amount == 0:

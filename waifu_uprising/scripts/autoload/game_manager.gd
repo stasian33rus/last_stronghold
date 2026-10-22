@@ -5,6 +5,7 @@ extends Node
 ##   +port=NNNNN         — порт (dedicated / автотесты)
 ##   +autotest=host|client — интеграционный сетевой тест (см. tests/autotest_runner.gd)
 ##   +rematch=1            — с +autotest: после победы сыграть второй матч (реванш)
+##   +evolve=1             — с +autotest: проверка эволюции и её репликации клиенту
 ##   +ip=A.B.C.D         — адрес сервера для autotest=client
 ##   +fast=1             — ускоренный баланс прогрессии (короткие интермиссии — для тестов)
 
@@ -24,6 +25,7 @@ var autotest_port: int = Net.DEFAULT_PORT
 var autotest_ip: String = "127.0.0.1"
 var autotest_started: bool = false
 var autotest_rematch: bool = false
+var autotest_evolve: bool = false
 var dedicated_mode: bool = false
 var dedicated_port: int = Net.DEFAULT_PORT
 
@@ -52,6 +54,8 @@ func _parse_cmdline() -> void:
 			autotest_mode = a.trim_prefix("autotest=")
 		elif a == "rematch=1" or a == "rematch":
 			autotest_rematch = true
+		elif a == "evolve=1" or a == "evolve":
+			autotest_evolve = true
 		elif a.begins_with("ip="):
 			autotest_ip = a.trim_prefix("ip=")
 		elif a == "fast=1" or a == "fast":
