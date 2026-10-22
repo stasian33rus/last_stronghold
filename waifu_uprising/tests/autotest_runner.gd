@@ -25,10 +25,13 @@ var _enemy_ref: Node3D
 var _enemy_ref_pos := Vector3.ZERO
 var _enemies_seen := 0
 var _match_done := false
+var _finished := false
 
 func _ready() -> void:
 	mode = Game.autotest_mode
+	Game.autotest_started = true
 	Events.match_ended.connect(_on_match_ended)
+	Net.connection_failed.connect(func(reason: String) -> void: _finish(false, "connection failed: %s" % reason))
 	match mode:
 		"host":
 			var err := Net.create_game(Game.autotest_port)
@@ -59,7 +62,7 @@ func _physics_process(delta: float) -> void:
 				_set_phase("lobby")
 		"lobby":
 			if mode == "host":
-				if Net.get_player_count() >= 2 and Net.all_players_ready():
+				if Net.get_player_count() >= 2 and Net.all_clients_ready():
 					print("[AUTOTEST] host: все готовы — старт матча")
 					Net.start_match(Game.ARENA_SCENE)
 					_set_phase("match")
@@ -81,46 +84,66 @@ func _find_pawn() -> void:
 			_pawn = p
 			return
 
-## Виртуальный ввод: идём к ближайшему врагу, бьём в диапазоне, целясь в него.
+## Виртуальный ввод: защищаем Гигачада — целью выбираем врага, ближайшего к нему
+## (а не к себе), по пути бьём любого, кто попал в радиус удара.
 func _drive_pawn(delta: float) -> void:
 	if _pawn == null or not is_instance_valid(_pawn):
 		_find_pawn()
 		return
 	_attack_cd -= delta
-	var target := _nearest_enemy()
+	var target := _priority_enemy()
 	var input := {"move": Vector2.ZERO, "aim_yaw": _pawn.aim_yaw, "press_attack": false, "press_dodge": false}
-	if target != null:
-		var to := target.global_position - _pawn.global_position
+	var threat := _nearest_enemy_to(_pawn.global_position)
+	if threat != null and threat.global_position.distance_to(_pawn.global_position) <= ATTACK_RANGE \
+			and _attack_cd <= 0.0 and _pawn.state != PlayerPawn.State.DOWN:
+		## Бей того, кто рядом, даже если основная цель дальше.
+		var to_t: Vector3 = threat.global_position - _pawn.global_position
+		to_t.y = 0.0
+		if to_t.length() > 0.01:
+			var d := to_t.normalized()
+			input["aim_yaw"] = atan2(-d.x, -d.z)
+		input["press_attack"] = true
+		_attack_cd = ATTACK_PERIOD
+	elif target != null:
+		var to: Vector3 = target.global_position - _pawn.global_position
 		to.y = 0.0
 		var dist := to.length()
 		var dir := to / dist if dist > 0.01 else Vector3.FORWARD
 		input["aim_yaw"] = atan2(-dir.x, -dir.z)
-		if dist > ATTACK_RANGE * 0.75:
+		if dist > ATTACK_RANGE * 0.7:
 			input["move"] = Vector2(dir.x, dir.z)
 		if dist <= ATTACK_RANGE and _attack_cd <= 0.0 and _pawn.state != PlayerPawn.State.DOWN:
 			input["press_attack"] = true
 			_attack_cd = ATTACK_PERIOD
-	elif _pawn.health.is_dead == false:
+	else:
 		## Врагов пока нет — идём к Гигачаду (не стоим в углу).
 		var gigas := get_tree().get_nodes_in_group("gigachad")
 		if gigas.size() > 0:
-			var to: Vector3 = (gigas[0] as Node3D).global_position - _pawn.global_position
-			to.y = 0.0
-			if to.length() > 3.0:
-				var dir := to.normalized()
-				input["move"] = Vector2(dir.x, dir.z)
+			var to_g: Vector3 = (gigas[0] as Node3D).global_position - _pawn.global_position
+			to_g.y = 0.0
+			if to_g.length() > 3.0:
+				var dir_g := to_g.normalized()
+				input["move"] = Vector2(dir_g.x, dir_g.z)
 	_pawn.external_input = input
 
-func _nearest_enemy() -> Node3D:
+## Враг, ближайший к Гигачаду (защитная тактика); если Гигачад пал — ближайший к пешке.
+func _priority_enemy() -> Node3D:
+	var gigas := get_tree().get_nodes_in_group("gigachad")
+	var anchor := _pawn.global_position
+	if gigas.size() > 0:
+		var g := gigas[0] as GigaChad
+		if g != null and not g.health.is_dead:
+			anchor = g.global_position
+	return _nearest_enemy_to(anchor)
+
+func _nearest_enemy_to(anchor: Vector3) -> Node3D:
 	var best: Node3D = null
-	var best_d := 1e9
+	var best_d := 1e18
 	for candidate in get_tree().get_nodes_in_group("enemy_units"):
 		var foe := candidate as EnemyFop
 		if foe == null or foe.health.is_dead or foe.state == EnemyFop.State.DEAD:
 			continue
-		if _pawn == null:
-			break
-		var d := foe.global_position.distance_squared_to(_pawn.global_position)
+		var d := foe.global_position.distance_squared_to(anchor)
 		if d < best_d:
 			best_d = d
 			best = foe
@@ -167,5 +190,15 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 		_finish(false, "; ".join(problems))
 
 func _finish(passed: bool, reason: String) -> void:
+	if _finished:
+		return
+	_finished = true
 	print("[AUTOTEST] RESULT=%s mode=%s reason=%s" % ["PASS" if passed else "FAIL", mode, reason])
+	_finish_async(passed)
+
+func _finish_async(passed: bool) -> void:
+	## Даём надёжным RPC (результат матча) долететь до второго пира,
+	## затем закрываем ENet и выходим.
+	await get_tree().create_timer(0.8).timeout
+	Net.disconnect_game()
 	get_tree().quit(0 if passed else 1)

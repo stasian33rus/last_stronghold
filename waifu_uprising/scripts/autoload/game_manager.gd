@@ -17,6 +17,7 @@ var rng := RandomNumberGenerator.new()
 var autotest_mode: String = ""
 var autotest_port: int = Net.DEFAULT_PORT
 var autotest_ip: String = "127.0.0.1"
+var autotest_started: bool = false
 var dedicated_mode: bool = false
 var dedicated_port: int = Net.DEFAULT_PORT
 

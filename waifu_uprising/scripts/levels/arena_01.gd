@@ -16,8 +16,21 @@ func _ready() -> void:
 		Net.peer_left.connect(_on_peer_left_during_match)
 		_server_setup()
 	else:
-		## Клиент сообщает серверу, что сцена загружена (спавн начнётся после всех).
+		## Клиент сообщает серверу, что сцена загружена. Пакет может прийти раньше,
+		## чем сервер сам сменит сцену (узел ещё не существует) — повторяем, пока
+		## сервер не подтвердит выход из фазы LOADING.
+		_send_scene_ready_with_retry()
+
+func _send_scene_ready_with_retry() -> void:
+	## Первая отправка — после короткой паузы: сервер обычно ещё достраивает свою
+	## арену в этот момент (иначе RPC уйдёт в пустоту и будет залогирован как ошибка).
+	await get_tree().create_timer(0.5).timeout
+	var tries := 0
+	while tries < 60 and is_inside_tree() and match_controller != null \
+			and match_controller.phase == MatchController.Phase.LOADING:
 		match_controller.cl_scene_ready.rpc_id(1)
+		tries += 1
+		await get_tree().create_timer(0.25).timeout
 
 func _server_setup() -> void:
 	var snapshot: Dictionary = Game.match_players_snapshot

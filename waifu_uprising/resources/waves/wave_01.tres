@@ -6,8 +6,8 @@
 script = ExtResource("1_wv")
 index = 1
 display_name = "Дебют Ордена Гламура"
-intro_delay = 0.5
-spawn_interval = 0.45
+intro_delay = 1.0
+spawn_interval = 0.6
 max_alive = 10
 enemy_def_path = "res://resources/enemies/fop.tres"
 count_base = 3

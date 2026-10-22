@@ -36,7 +36,7 @@ func _ready() -> void:
 	Net.returned_to_menu.connect(_on_returned_to_menu)
 	_fill_classes()
 	_refresh_lobby()
-	if Game.autotest_mode != "":
+	if Game.autotest_mode != "" and not Game.autotest_started:
 		_start_autotest()
 
 func _fill_classes() -> void:
@@ -140,5 +140,6 @@ func _start_autotest() -> void:
 	_autotest_runner = Node.new()
 	_autotest_runner.name = "AutoTestRunner"
 	_autotest_runner.set_script(script)
-	## Вешаем на root, чтобы раннер пережил смену сцены меню -> арена.
-	get_tree().root.add_child(_autotest_runner)
+	## Вешаем на root (deferred — root ещё достраивает сцену меню), чтобы раннер
+	## пережил смену сцены меню -> арена.
+	get_tree().root.add_child.call_deferred(_autotest_runner)

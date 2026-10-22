@@ -18,6 +18,17 @@ func _ready() -> void:
 		add_child(p)
 		_pool.append(p)
 	_build_sounds()
+	## При аварийном/тестовом quit() _exit_tree автозагрузок не вызывается —
+	## чистим аудио по сигналу tree_exiting корневого окна.
+	get_tree().root.tree_exiting.connect(_shutdown_audio)
+
+## Корректное освобождение аудио при завершении (без утечек ObjectDB на выходе).
+func _shutdown_audio() -> void:
+	for p in _pool:
+		if is_instance_valid(p):
+			p.stop()
+			p.stream = null
+	_streams.clear()
 
 func play(what: String, volume_db: float = 0.0, pitch: float = 1.0) -> void:
 	if not _streams.has(what):

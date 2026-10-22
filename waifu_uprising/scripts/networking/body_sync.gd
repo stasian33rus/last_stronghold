@@ -50,7 +50,7 @@ func _physics_process(delta: float) -> void:
 	_acc += delta
 	if _acc >= sync_interval:
 		_acc = 0.0
-		if _owner3d.has_method("get_sync_payload"):
+		if Net.is_online() and _owner3d.has_method("get_sync_payload"):
 			_sv_snapshot.rpc(_owner3d.get_sync_payload())
 
 @rpc("authority", "call_remote", "unreliable_ordered")

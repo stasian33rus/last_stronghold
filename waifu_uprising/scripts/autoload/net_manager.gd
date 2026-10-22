@@ -91,7 +91,9 @@ func join_game(ip: String, port: int = DEFAULT_PORT) -> Error:
 
 func disconnect_game() -> void:
 	if is_online():
-		multiplayer.multiplayer_peer = null
+		## Явный offline-пир (не null): rpc() с call_local продолжают работать локально
+		## без ошибок «no multiplayer peer is active».
+		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	net_state = NetState.OFFLINE
 	is_dedicated = false
 	players.clear()
@@ -239,6 +241,20 @@ func all_players_ready() -> bool:
 		if not pdata["ready"]:
 			return false
 	return true
+
+## Все КЛИЕНТЫ готовы (хосту ready не нужен — он сам жмёт «Старт»).
+## Для dedicated-сервера готовы должны быть все зарегистрированные игроки.
+func all_clients_ready() -> bool:
+	if players.is_empty():
+		return false
+	var clients := 0
+	for peer_id in players.keys():
+		if int(peer_id) == 1 and not is_dedicated:
+			continue
+		clients += 1
+		if not players[int(peer_id)]["ready"]:
+			return false
+	return clients >= 1
 
 # ---------------------------------------------------------------- старт матча
 
