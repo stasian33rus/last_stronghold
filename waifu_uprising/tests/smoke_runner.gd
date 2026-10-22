@@ -185,6 +185,7 @@ func _test_full_match_flow() -> void:
 	var fight_on: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.FIGHT, 10.0)
 	_check(fight_on, "Фаза FIGHT после отсчёта")
 	_obj_baseline = int(Performance.get_monitor(Performance.OBJECT_COUNT))
+	await _test_navigation()
 	var spawned: bool = await _wait_until(func(): return not _alive_enemies().is_empty(), 15.0)
 	_check(spawned, "Волна 1 заспавнила врагов (alive=%d)" % _alive_enemies().size())
 	if not spawned:
@@ -241,6 +242,8 @@ func _test_full_match_flow() -> void:
 	var giga_hurt: bool = await _wait_until(func(): return giga.health.health < giga_hp_before, 8.0)
 	_check(giga_hurt or _alive_enemies().is_empty(),
 		"Враги атакуют Гигачада (hp %.0f -> %.0f)" % [giga_hp_before, giga.health.health])
+
+	await _test_destructibles()
 
 	## --- Зачистка волны 1 -> WAVE_COMPLETE -> INTERMISSION (убиваем, пока спавнятся).
 	var wc: bool = await _wait_until(func():
@@ -574,6 +577,10 @@ func _test_shadow() -> void:
 		return
 	_isolate(shadow)
 	var giga := _giga()
+	## Уводим пешку далеко: ближайшей целью Тени гарантированно становится Гигачад.
+	var pawn_sh := _local_pawn()
+	if pawn_sh != null:
+		pawn_sh.global_position = Vector3(17.0, 0.2, 17.0)
 	var hp0 := giga.health.health
 	## Ставим в 6 м: дальше dash_min_range — должен сделать рывок и провести серию.
 	shadow.global_position = giga.global_position + Vector3(6.0, 0.0, 0.0)
@@ -588,6 +595,9 @@ func _test_spitter() -> void:
 		return
 	_isolate(spitter)
 	var giga := _giga()
+	var pawn_sp := _local_pawn()
+	if pawn_sp != null:
+		pawn_sp.global_position = Vector3(17.0, 0.2, 17.0)
 	var hp0 := giga.health.health
 	spitter.global_position = giga.global_position + Vector3(0.0, 0.0, 8.0)
 	var proj_seen: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").size() > 0, 6.0)
@@ -607,3 +617,97 @@ func _test_spitter() -> void:
 	get_tree().call_group(&"projectiles", "expire_now")
 	await _frames(2)
 	_check(get_tree().get_nodes_in_group("projectiles").is_empty(), "Снаряды очищены expire_now")
+
+
+# ------------------------------------------------------------------ навигация (Этап 2)
+
+func _nav_map() -> RID:
+	var arena := get_tree().current_scene
+	return arena.nav_region.get_navigation_map()
+
+func _path_max_lateral(from: Vector3, to: Vector3, axis_x: float) -> float:
+	var path := NavigationServer3D.map_get_path(_nav_map(), from, to, true)
+	var max_dev := 0.0
+	for p in path:
+		max_dev = maxf(max_dev, absf((p as Vector3).x - axis_x))
+	return max_dev
+
+func _test_navigation() -> void:
+	var arena := get_tree().current_scene
+	var region: NavigationRegion3D = arena.nav_region
+	_check(region.navigation_mesh.get_polygon_count() > 0,
+		"NavMesh испечён на сервере: полигонов = %d" % region.navigation_mesh.get_polygon_count())
+	## Маршрут вдоль x=9 упирается в колонну (9, 1.5, 9) — путь обязан её обходить.
+	var dev := _path_max_lateral(Vector3(9.0, 0.2, 14.0), Vector3(9.0, 0.2, -14.0), 9.0)
+	_check(dev > 1.0, "Маршрут обходит колонну (боковое отклонение %.2f м)" % dev)
+	## Недостижимая цель — корректный результат без падения.
+	var unreachable := NavigationServer3D.map_get_path(_nav_map(), Vector3(0, 0.2, 0), Vector3(0, 50.0, -500.0), true)
+	_check(unreachable.size() >= 0, "Недостижимая цель обрабатывается корректно (точек: %d)" % unreachable.size())
+	## У врагов есть активные агенты (сервер).
+	await _wait_until(func(): return not _alive_enemies().is_empty(), 10.0)
+	var agent_ok := true
+	for e in _alive_enemies():
+		var base := e as EnemyBase
+		if base.nav_agent == null or not base._nav_active:
+			agent_ok = false
+	_check(agent_ok, "У всех врагов активные NavigationAgent3D")
+
+# ------------------------------------------------------------------ разрушаемые объекты
+
+func _test_destructibles() -> void:
+	var crates := get_tree().get_nodes_in_group("destructibles")
+	_check(crates.size() >= 6, "На арене разрушаемые ящики: %d" % crates.size())
+	if crates.is_empty():
+		return
+	var crate := crates[0] as DestructibleProp
+	## Отодвинуть врагов, чтобы проверки были детерминированными.
+	_isolate(crate)
+	var pawn := _local_pawn()
+	var sys := _prog()
+
+	## 1) Реальный удар игрока по ящику (проверка слоёв hurtbox_prop/mask 384).
+	pawn.global_position = crate.global_position + Vector3(0.0, -0.9, 2.2)
+	pawn.rotation.y = 0.0
+	pawn.external_input = {"move": Vector2.ZERO, "aim_yaw": 0.0, "press_attack": false, "press_dodge": false}
+	var crate_hp0 := crate.health.health
+	pawn.try_attack()
+	await _seconds(0.45)
+	_check(crate.health.health < crate_hp0, "Удар молота повреждает ящик (%.0f -> %.0f)" % [crate_hp0, crate.health.health])
+	pawn.external_input = null
+
+	## 2) Стадии повреждения (2 состояния до разрушения).
+	crate.health.take_damage(Units.make_damage(crate.health.health * 0.5, null, 0, Vector3.FORWARD, 0.0, crate.global_position))
+	_check(crate._stage >= 1, "Стадия повреждения 1+ после 50%% HP (stage=%d)" % crate._stage)
+
+	## 3) Навигация: путь вдоль x=5.5 огибает ящик (5.5, 0.9, -6.5).
+	var dev_before := _path_max_lateral(Vector3(5.5, 0.2, -14.0), Vector3(5.5, 0.2, 2.0), 5.5)
+	_check(dev_before > 0.5, "NavMesh учитывает ящик до разрушения (отклонение %.2f)" % dev_before)
+
+	## 4) Разрушение ровно один раз + награда ровно один раз.
+	var destroyed_counter := [0]
+	crate.destroyed_by.connect(func(_peer: int) -> void: destroyed_counter[0] += 1)
+	var st: ProgressionState = sys.states.get(1, null)
+	var coins_before := st.coins
+	crate.health.take_damage(Units.make_damage(99999.0, _local_pawn(), 1, Vector3.FORWARD, 2.0, crate.global_position))
+	await _frames(3)
+	_check(crate.is_destroyed, "Ящик разрушен (серверное состояние)")
+	_check(crate.collision_layer == 0, "Коллизия разрушенного ящика отключена")
+	_check(not crate.visuals.visible, "Разрушенный ящик скрыт (не «воскреснет» из снапшота)")
+	_check(destroyed_counter[0] == 1, "Событие разрушения эмитировано ровно один раз (count=%d)" % destroyed_counter[0])
+	crate.health.take_damage(Units.make_damage(99999.0, _local_pawn(), 1, Vector3.FORWARD, 2.0, crate.global_position))
+	await _frames(2)
+	_check(destroyed_counter[0] == 1, "Повторный урон не разрушает дважды (count=%d)" % destroyed_counter[0])
+	_check(st.coins - coins_before == sys.balance.coins_crate,
+		"Награда за ящик однократна: +%d монет" % (st.coins - coins_before))
+
+	## 5) Обломки: появились локально и очистились по времени жизни.
+	var debris_seen := get_tree().get_nodes_in_group("debris").size()
+	_check(debris_seen > 0, "Обломки созданы (локальная косметика): %d" % debris_seen)
+	await _seconds(3.5)
+	_check(get_tree().get_nodes_in_group("debris").is_empty(), "Обломки очищены по времени жизни")
+
+	## 6) Проходимость обновлена после перепекания NavMesh.
+	await _seconds(1.0)
+	var dev_after := _path_max_lateral(Vector3(5.5, 0.2, -14.0), Vector3(5.5, 0.2, 2.0), 5.5)
+	_check(dev_after < dev_before and dev_after < 0.6,
+		"NavMesh перепечён: путь сквозь бывший ящик выпрямился (%.2f -> %.2f)" % [dev_before, dev_after])

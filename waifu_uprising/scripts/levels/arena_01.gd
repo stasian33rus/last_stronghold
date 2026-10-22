@@ -7,6 +7,9 @@ extends Node3D
 @onready var match_controller: MatchController = $MatchController
 @onready var wave_manager: WaveManager = $WaveManager
 @onready var gigachad: GigaChad = $GigaChad
+@onready var nav_region: NavigationRegion3D = $NavRegion
+
+var _nav_rebake_pending := false
 
 const PLAYER_SCENE: PackedScene = preload("res://scenes/characters/player.tscn")
 
@@ -18,9 +21,13 @@ func _ready() -> void:
 	add_to_group("arena")
 	spawner.spawn_function = _on_spawn_request
 	if Net.is_server():
+		_bake_navigation()
+		_connect_destructibles()
 		Net.peer_left.connect(_on_peer_left_during_match)
 		_server_setup()
 	else:
+		## Клиентам навигация не нужна (ИИ врагов — серверный): не тратим CPU на bake.
+		nav_region.enabled = false
 		## Клиент сообщает серверу, что сцена загружена. Пакет может прийти раньше,
 		## чем сервер сам сменит сцену (узел ещё не существует) — повторяем, пока
 		## сервер не подтвердит выход из фазы LOADING.
@@ -143,3 +150,44 @@ func _on_peer_left_during_match(peer_id: int) -> void:
 		if pawn is PlayerPawn and pawn.owner_peer == peer_id:
 			print("[Arena] Пешка отключившегося peer %d удалена" % peer_id)
 			pawn.queue_free()
+
+
+# ------------------------------------------------------------------ навигация (Этап 2)
+
+## Runtime-bake NavigationMesh по статическим коллайдерам из группы "nav_source"
+## (пол, стены, колонны, ящики). Выполняется один раз на сервере при загрузке
+## арены и повторно — только после разрушений (см. request_nav_rebake).
+func _bake_navigation() -> void:
+	if nav_region == null or nav_region.navigation_mesh == null:
+		push_error("[Arena] NavRegion/NavigationMesh не настроены")
+		return
+	nav_region.bake_navigation_mesh(false)
+	NavigationServer3D.map_force_update(nav_region.get_navigation_map())
+	print("[Arena] NavMesh испечён: полигонов = %d" % nav_region.navigation_mesh.get_polygon_count())
+
+## Дебаунс: серия разрушений -> одно перепекание (не пересоздаём сетку каждый кадр).
+func request_nav_rebake() -> void:
+	if not Net.is_server() or _nav_rebake_pending:
+		return
+	_nav_rebake_pending = true
+	get_tree().create_timer(0.4).timeout.connect(func() -> void:
+		_nav_rebake_pending = false
+		if Net.is_server() and is_inside_tree() and nav_region != null:
+			nav_region.bake_navigation_mesh(false)
+			NavigationServer3D.map_force_update(nav_region.get_navigation_map())
+			print("[Arena] NavMesh перепечён после разрушений: полигонов = %d" % nav_region.navigation_mesh.get_polygon_count())
+	)
+
+# ------------------------------------------------------------------ разрушаемые объекты
+
+func _connect_destructibles() -> void:
+	var prog: ProgressionSystem = null
+	var ps := get_tree().get_nodes_in_group("progression_system")
+	if ps.size() > 0:
+		prog = ps[0] as ProgressionSystem
+	for node in get_tree().get_nodes_in_group("destructibles"):
+		var prop := node as DestructibleProp
+		if prop == null:
+			continue
+		if prog != null:
+			prop.destroyed_by.connect(func(peer_id: int) -> void: prog.grant_prop_reward(peer_id))

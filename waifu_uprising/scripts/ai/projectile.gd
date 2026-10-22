@@ -35,7 +35,12 @@ func _physics_process(delta: float) -> void:
 			continue
 		if n3 is PlayerPawn and n3.state == PlayerPawn.State.DOWN:
 			continue
-		if n3.global_position.distance_to(global_position) <= HIT_RADIUS:
+		## Сравнение в плоскости XZ: снаряд летит на высоте груди, а origin
+		## героев — у ног; 3D-дистанция систематически промахивалась бы.
+		var to_hero := n3.global_position - global_position
+		to_hero.y = 0.0
+		var hit_radius := HIT_RADIUS * (1.4 if n3 is GigaChad else 1.0)
+		if to_hero.length() <= hit_radius:
 			_hit_hero(n3, h)
 			return
 

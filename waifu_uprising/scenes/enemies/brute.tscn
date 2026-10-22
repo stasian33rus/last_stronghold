@@ -96,6 +96,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 1.4, -0.25)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.55)
 mesh = SubResource("mesh_club")
 
+[node name="NavAgent" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.7
+target_desired_distance = 1.2
+
 [node name="Hitbox" type="Area3D" parent="."]
 collision_layer = 32
 collision_mask = 64

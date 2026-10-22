@@ -35,11 +35,14 @@ var _stuck_probe_pos := Vector3.ZERO
 var _stuck_timer: float = 0.0
 var _strafe_timer: float = 0.0
 var _strafe_sign: float = 1.0
+## Флаг активной навигации (NavigationAgent3D не имеет рантайм-свойства enabled в 4.7).
+var _nav_active: bool = false
 
 @onready var health: HealthComponent = $Health
 @onready var hitbox: HitboxComponent = $Hitbox
 @onready var kb: KnockbackComponent = $Knockback
 @onready var visuals: Node3D = $Visuals
+@onready var nav_agent: NavigationAgent3D = get_node_or_null(^"NavAgent")
 
 func _ready() -> void:
 	if def == null:
@@ -47,6 +50,15 @@ func _ready() -> void:
 		return
 	add_to_group("enemy_units")
 	_stuck_probe_pos = global_position
+	if nav_agent != null:
+		if Net.is_server():
+			nav_agent.path_desired_distance = 0.7
+			nav_agent.target_desired_distance = maxf(0.5, def.attack_range * 0.6)
+			nav_agent.avoidance_enabled = false ## разделение тел обеспечивает физика + strafe
+			_nav_active = true
+		else:
+			nav_agent.set_physics_process(false) ## клиенты не считают навигацию
+			_nav_active = false
 	health.setup(def.max_health)
 	hitbox.damage = def.attack_damage
 	hitbox.knockback_force = def.attack_knockback
@@ -179,9 +191,25 @@ func _chase(delta: float) -> void:
 	if dist > 0.05:
 		var dir := to_target / dist
 		_face_toward(dir, delta)
-		_chase_move(delta, dir, dist)
+		_chase_move(delta, _nav_move_dir(dir), dist)
 	if dist <= def.attack_range and _target_is_valid_target():
 		_set_state(State.WINDUP)
+
+## Реальная навигация: маршрут NavigationAgent3D вокруг препятствий;
+## при отсутствии маршрута/агента — безопасный fallback на прямое движение
+## (анти-застревание остаётся защитным механизмом).
+func _nav_move_dir(fallback: Vector3) -> Vector3:
+	if not _nav_active or _target == null:
+		return fallback
+	nav_agent.target_position = _target.global_position
+	if not nav_agent.is_target_reachable():
+		return fallback
+	var next := nav_agent.get_next_path_position()
+	var to_next := next - global_position
+	to_next.y = 0.0
+	if to_next.length() < 0.25:
+		return fallback
+	return to_next.normalized()
 
 func _face_toward(dir: Vector3, delta: float) -> void:
 	var desired_yaw := atan2(-dir.x, -dir.z)

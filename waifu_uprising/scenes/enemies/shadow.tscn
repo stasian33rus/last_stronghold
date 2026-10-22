@@ -79,6 +79,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.95, -0.15)
 transform = Transform3D(1, 0, 0, 0, 0.9396926, 0.34202012, 0, -0.34202012, 0.9396926, 0, 0, -0.3)
 mesh = SubResource("mesh_dagger")
 
+[node name="NavAgent" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.7
+target_desired_distance = 1.2
+
 [node name="Hitbox" type="Area3D" parent="."]
 collision_layer = 32
 collision_mask = 64

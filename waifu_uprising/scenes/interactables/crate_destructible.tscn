@@ -1,0 +1,44 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/gameplay/destructible.gd" id="1_destr"]
+[ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="2_health"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="3_hurtbox"]
+
+[sub_resource type="StandardMaterial3D" id="mat_crate"]
+albedo_color = Color(0.42, 0.31, 0.2, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="mesh_crate"]
+material = SubResource("mat_crate")
+size = Vector3(1.8, 1.8, 1.8)
+
+[sub_resource type="BoxShape3D" id="shape_crate"]
+size = Vector3(1.8, 1.8, 1.8)
+
+[sub_resource type="BoxShape3D" id="shape_hurtbox"]
+size = Vector3(1.9, 1.9, 1.9)
+
+[node name="CrateDestructible" type="StaticBody3D" groups=["destructibles", "nav_source"]]
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_destr")
+
+[node name="Visuals" type="Node3D" parent="."]
+
+[node name="Mesh" type="MeshInstance3D" parent="Visuals"]
+mesh = SubResource("mesh_crate")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("shape_crate")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("2_health")
+
+[node name="Hurtbox" type="Area3D" parent="."]
+collision_layer = 256
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_hurtbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+shape = SubResource("shape_hurtbox")
