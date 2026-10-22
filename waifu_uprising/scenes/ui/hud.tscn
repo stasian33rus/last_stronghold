@@ -127,6 +127,119 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = ""
 
+[node name="XpRow" type="HBoxContainer" parent="BottomLeft"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LevelBadge" type="Label" parent="BottomLeft/XpRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+text = "УР 1"
+
+[node name="XpBack" type="ColorRect" parent="BottomLeft/XpRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(260, 10)
+size_flags_vertical = 4
+color = Color(0.07, 0.05, 0.12, 0.85)
+
+[node name="Fill" type="ColorRect" parent="BottomLeft/XpRow/XpBack"]
+layout_mode = 1
+anchor_bottom = 1.0
+offset_right = 0.0
+grow_vertical = 2
+color = Color(0.65, 0.45, 1, 1)
+
+[node name="CoinsLabel" type="Label" parent="BottomLeft/XpRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+text = "Монеты: 0"
+
+[node name="BuffBox" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -140.0
+offset_right = 500.0
+offset_bottom = -104.0
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="ToastBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -380.0
+offset_top = -190.0
+offset_right = -12.0
+offset_bottom = -44.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 3
+alignment = 2
+
+[node name="UpgradePanel" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dim" type="ColorRect" parent="UpgradePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.01, 0.05, 0.6)
+
+[node name="Center" type="VBoxContainer" parent="UpgradePanel"]
+layout_mode = 1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -220.0
+offset_right = 420.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="OfferTitle" type="Label" parent="UpgradePanel/Center"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+text = "ВЫБЕРИТЕ УЛУЧШЕНИЕ"
+horizontal_alignment = 1
+
+[node name="CardsBox" type="HBoxContainer" parent="UpgradePanel/Center"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 18
+
+[node name="TimerBack" type="ColorRect" parent="UpgradePanel/Center"]
+layout_mode = 2
+custom_minimum_size = Vector2(560, 10)
+size_flags_horizontal = 4
+color = Color(0.08, 0.06, 0.12, 0.9)
+
+[node name="Fill" type="ColorRect" parent="UpgradePanel/Center/TimerBack"]
+layout_mode = 1
+anchor_bottom = 1.0
+offset_right = 560.0
+grow_vertical = 2
+color = Color(1, 0.7, 0.25, 1)
+
 [node name="ControlsHint" type="Label" parent="."]
 layout_mode = 1
 anchor_left = 1.0

@@ -7,9 +7,14 @@ extends CanvasLayer
 var _pawn: PlayerPawn
 var _giga: GigaChad
 var _mc: MatchController
+var _sys: ProgressionSystem
 var _pawn_search_acc: float = 0.0
 var _rows: Dictionary = {} ## peer_id -> {"box": HBoxContainer, "fill": ColorRect, "label": Label}
 var _ended_shown := false
+var _offer_ids: Array = []
+var _offer_deadline_msec: int = 0
+var _buffs_shown_hash: int = 0
+var _local_prog: Dictionary = {}
 
 @onready var giga_label: Label = $TopCenter/GigaLabel
 @onready var giga_health_back: ColorRect = $TopCenter/GigaHealthBack
@@ -31,29 +36,59 @@ var _ended_shown := false
 @onready var result_stats: Label = $ResultPanel/VBox/ResultStats
 @onready var rematch_button: Button = $ResultPanel/VBox/Buttons/RematchButton
 @onready var menu_button: Button = $ResultPanel/VBox/Buttons/MenuButton
+@onready var level_badge: Label = $BottomLeft/XpRow/LevelBadge
+@onready var xp_back: ColorRect = $BottomLeft/XpRow/XpBack
+@onready var xp_fill: ColorRect = $BottomLeft/XpRow/XpBack/Fill
+@onready var coins_label: Label = $BottomLeft/XpRow/CoinsLabel
+@onready var buff_box: HBoxContainer = $BuffBox
+@onready var toast_box: VBoxContainer = $ToastBox
+@onready var upgrade_panel: Control = $UpgradePanel
+@onready var offer_title: Label = $UpgradePanel/Center/OfferTitle
+@onready var cards_box: HBoxContainer = $UpgradePanel/Center/CardsBox
+@onready var offer_timer_back: ColorRect = $UpgradePanel/Center/TimerBack
+@onready var offer_timer_fill: ColorRect = $UpgradePanel/Center/TimerBack/Fill
 
 func _ready() -> void:
 	result_panel.visible = false
+	upgrade_panel.visible = false
 	announcement_label.modulate.a = 0.0
 	rematch_button.pressed.connect(_on_rematch)
 	menu_button.pressed.connect(_on_menu)
 	Events.match_ended.connect(_on_match_ended)
 	Events.local_announcement.connect(_show_announcement)
+	Events.local_toast.connect(_on_toast)
+	Events.upgrade_offer_opened.connect(_on_offer_opened)
+	Events.upgrade_offer_closed.connect(_on_offer_closed)
+	Events.progression_updated.connect(func(payload: Dictionary) -> void: _local_prog = payload)
+	Events.shop_result_msg.connect(_on_shop_result)
 	var mcs := get_tree().get_nodes_in_group("match_controller")
 	_mc = mcs[0] if mcs.size() > 0 else null
 	var gigas := get_tree().get_nodes_in_group("gigachad")
 	_giga = gigas[0] if gigas.size() > 0 else null
 
 func _unhandled_input(event: InputEvent) -> void:
+	if upgrade_panel.visible:
+		if event.is_action_pressed("choose_1"):
+			_request_offer_choice(0)
+			return
+		if event.is_action_pressed("choose_2"):
+			_request_offer_choice(1)
+			return
+		if event.is_action_pressed("choose_3"):
+			_request_offer_choice(2)
+			return
 	if event.is_action_pressed("menu_cancel"):
 		_on_menu()
 
 func _process(delta: float) -> void:
 	_find_local_pawn(delta)
+	_find_system()
 	_update_giga()
 	_update_local()
 	_update_wave()
 	_update_players_list()
+	_update_progression()
+	_update_offer_timer()
 
 func _find_local_pawn(delta: float) -> void:
 	if _pawn != null and is_instance_valid(_pawn):
@@ -167,6 +202,8 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 	if _ended_shown:
 		return
 	_ended_shown = true
+	if upgrade_panel.visible:
+		_on_offer_closed()
 	result_title.text = "ПОБЕДА!" if victory else "ПОРАЖЕНИЕ"
 	result_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3) if victory else Color(1.0, 0.35, 0.4))
 	var lines: Array[String] = []
@@ -195,3 +232,200 @@ func _on_rematch() -> void:
 func _on_menu() -> void:
 	Sfx.play("ui")
 	Game.leave_match_to_menu()
+
+
+# ------------------------------------------------------------------ прогрессия (Этап 2)
+
+func _find_system() -> void:
+	if _sys != null and is_instance_valid(_sys):
+		return
+	var ps := get_tree().get_nodes_in_group("progression_system")
+	_sys = ps[0] if ps.size() > 0 else null
+
+func _update_progression() -> void:
+	if _sys == null:
+		return
+	var payload: Dictionary = _sys.local_state
+	if payload.is_empty():
+		payload = _local_prog
+	if payload.is_empty():
+		return
+	var level := int(payload.get("level", 1))
+	var xp := int(payload.get("xp", 0))
+	var xp_need := maxi(1, int(payload.get("xp_need", 100)))
+	level_badge.text = "УР %d" % level
+	xp_fill.offset_right = xp_back.size.x * clampf(float(xp) / float(xp_need), 0.0, 1.0)
+	coins_label.text = "Монеты: %d" % int(payload.get("coins", 0))
+	if _pawn != null and is_instance_valid(_pawn):
+		local_name_label.text = "%s — %s · Ур. %d" % [_pawn.player_name, _display_class(_pawn.class_id), level]
+	_update_buffs(payload)
+
+func _update_buffs(payload: Dictionary) -> void:
+	var buffs: Array = payload.get("buffs", [])
+	var h := buffs.hash()
+	if h == _buffs_shown_hash:
+		return
+	_buffs_shown_hash = h
+	for child in buff_box.get_children():
+		child.queue_free()
+	for b in buffs:
+		var label := Label.new()
+		var eff := int(b.get("effect", -1))
+		var value := float(b.get("value", 0.0))
+		var remaining := float(b.get("remaining", -1.0))
+		var time_text := "постоянно" if remaining < 0.0 else "%.0f с" % remaining
+		match eff:
+			ShopItemDefinition.Effect.DAMAGE_BUFF_TIMED:
+				label.text = "Урон +%d%% (%s)" % [int(value * 100.0), time_text]
+				label.add_theme_color_override("font_color", Color(1.0, 0.65, 0.4))
+			ShopItemDefinition.Effect.DAMAGE_TAKEN_PERM:
+				label.text = "Защита +%d%% (%s)" % [int(value * 100.0), time_text]
+				label.add_theme_color_override("font_color", Color(0.55, 0.8, 1.0))
+			ShopItemDefinition.Effect.LIFESTEAL_ON_KILL:
+				label.text = "Вампиризм +%d%%" % int(value * 100.0)
+				label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.65))
+			_:
+				label.text = "Эффект"
+		label.add_theme_font_size_override("font_size", 14)
+		buff_box.add_child(label)
+
+func _update_offer_timer() -> void:
+	if not upgrade_panel.visible:
+		return
+	var now := Time.get_ticks_msec()
+	var left := maxi(0, _offer_deadline_msec - now)
+	var total := 1.0
+	if _sys != null and _sys.balance != null:
+		total = maxf(0.001, _sys.balance.choice_time * 1000.0)
+	offer_timer_fill.offset_right = offer_timer_back.size.x * clampf(float(left) / total, 0.0, 1.0)
+
+func _on_offer_opened(ids: Array, deadline_msec: int) -> void:
+	_offer_ids = ids
+	_offer_deadline_msec = deadline_msec
+	_build_offer_cards()
+	upgrade_panel.visible = true
+	var level := int(_sys.local_state.get("level", 1)) if _sys != null else 1
+	offer_title.text = "УРОВЕНЬ %d — ВЫБЕРИТЕ УЛУЧШЕНИЕ" % level
+	Sfx.play("count_go", -8.0, 1.2)
+
+func _on_offer_closed() -> void:
+	upgrade_panel.visible = false
+	for child in cards_box.get_children():
+		child.queue_free()
+	_offer_ids = []
+
+func _build_offer_cards() -> void:
+	for child in cards_box.get_children():
+		child.queue_free()
+	var taken: Dictionary = {}
+	if _sys != null:
+		taken = _sys.local_state.get("upgrades", {})
+	for i in _offer_ids.size():
+		var def := Content.get_upgrade(_offer_ids[i])
+		if def == null:
+			continue
+		cards_box.add_child(_make_card(def, i, int(taken.get(def.id, 0))))
+
+func _make_card(def: UpgradeDefinition, index: int, taken_level: int) -> Control:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(250, 330)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.09, 0.07, 0.16, 0.96)
+	style.border_color = UpgradeDefinition.rarity_color(def.rarity)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(12.0)
+	card.add_theme_stylebox_override("panel", style)
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	card.add_child(vbox)
+
+	var glyph := Label.new()
+	glyph.text = def.glyph
+	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph.add_theme_font_size_override("font_size", 46)
+	glyph.add_theme_color_override("font_color", def.color)
+	vbox.add_child(glyph)
+
+	var title := Label.new()
+	title.text = def.display_name
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 20)
+	vbox.add_child(title)
+
+	var rarity := Label.new()
+	rarity.text = UpgradeDefinition.rarity_name(def.rarity)
+	rarity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rarity.add_theme_font_size_override("font_size", 13)
+	rarity.add_theme_color_override("font_color", UpgradeDefinition.rarity_color(def.rarity))
+	vbox.add_child(rarity)
+
+	var desc := Label.new()
+	desc.text = def.description
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(210, 90)
+	desc.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(desc)
+
+	var level_label := Label.new()
+	level_label.text = "Уровень: %d → %d из %d" % [taken_level, taken_level + 1, def.max_level]
+	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	level_label.add_theme_font_size_override("font_size", 13)
+	level_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.9))
+	vbox.add_child(level_label)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	var button := Button.new()
+	button.text = "Взять  [%d]" % (index + 1)
+	button.add_theme_font_size_override("font_size", 17)
+	button.pressed.connect(_request_offer_choice.bind(index))
+	vbox.add_child(button)
+	return card
+
+func _request_offer_choice(index: int) -> void:
+	if index < 0 or index >= _offer_ids.size():
+		return
+	if _sys == null:
+		_find_system()
+	if _sys == null:
+		return
+	Sfx.play("ui")
+	_sys.request_choose(_offer_ids[index])
+
+# ------------------------------------------------------------------ тосты
+
+func _on_toast(text: String, kind: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 15)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	match kind:
+		"xp":
+			label.add_theme_color_override("font_color", Color(0.75, 0.6, 1.0))
+		"coins":
+			label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+		"levelup":
+			label.add_theme_color_override("font_color", Color(0.45, 1.0, 0.75))
+			Sfx.play("count_go", -6.0, 1.4)
+		"shop":
+			label.add_theme_color_override("font_color", Color(0.5, 0.95, 1.0))
+		_:
+			label.add_theme_color_override("font_color", Color(0.85, 0.87, 0.95))
+	toast_box.add_child(label)
+	while toast_box.get_child_count() > 5:
+		var oldest := toast_box.get_child(0)
+		toast_box.remove_child(oldest)
+		oldest.queue_free()
+	var tween := create_tween()
+	tween.tween_interval(2.2)
+	tween.tween_property(label, "modulate:a", 0.0, 0.6)
+	tween.tween_callback(label.queue_free)
+
+
+func _on_shop_result(ok: bool, text: String) -> void:
+	_on_toast(text, "shop" if ok else "info")
+	Sfx.play("ui" if ok else "hurt", -10.0)

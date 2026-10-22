@@ -178,14 +178,14 @@ func _test_match_victory_flow() -> void:
 	var stats: Dictionary = mc.stats
 	_check(stats.has(1) and int(stats[1]["kills"]) >= 1, "Статистика убийств посчитана сервером")
 
-	## Нет неограниченного роста объектов (ТЗ §20): после освобождения трупов
-	## и одноразовых эффектов число объектов возвращается к уровню до начала волны.
-	await _seconds(3.5)
+	await _test_progression()
+
+	## Нет неограниченного роста объектов (ТЗ §20): после освобождения трупов,
+	## карточек выбора и тостов число объектов возвращается к довоенному уровню.
+	await _seconds(4.0)
 	var obj_after := int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	_check(obj_after <= _obj_baseline + 40,
-		"Объекты не накапливаются (%d до волны -> %d после, предел +%d)" % [_obj_baseline, obj_after, 40])
-
-	await _test_progression()
+		"Объекты не накапливаются (%d до волны -> %d после боя/прогрессии, предел +%d)" % [_obj_baseline, obj_after, 40])
 
 # ------------------------------------------------------------------ прогрессия (Этап 2)
 
@@ -242,6 +242,12 @@ func _test_progression() -> void:
 				valid = false
 		_check(valid, "Все предложения уникальны и не на максимальном уровне")
 
+		## HUD реально строит экран выбора (карты = числу предложений).
+		var hud_node := get_tree().current_scene.get_node_or_null(^"HUD")
+		if hud_node != null:
+			_check(hud_node.upgrade_panel.visible and hud_node.cards_box.get_child_count() == ids.size(),
+				"HUD: экран выбора построен, карт: %d" % hud_node.cards_box.get_child_count())
+
 		## Отклонение недопустимого id (эффекта нет, предложение остаётся).
 		var levels_before := st.upgrade_levels.duplicate(true)
 		sys._apply_choice(1, &"totally_bogus_id", false)
@@ -255,6 +261,9 @@ func _test_progression() -> void:
 		_check(int(st.upgrade_levels.get(first_id, 0)) == level_after_first and level_after_first == 1,
 			"Улучшение применено ровно один раз")
 		_check(st.pending_choices == 0, "pending_choices списан после выбора")
+		var hud_after := get_tree().current_scene.get_node_or_null(^"HUD")
+		if hud_after != null:
+			_check(not hud_after.upgrade_panel.visible, "HUD: экран выбора закрыт после применения")
 
 	## Автовыбор по таймауту (серверный таймер).
 	sys.add_xp(1, sys.balance.xp_required(st.level))

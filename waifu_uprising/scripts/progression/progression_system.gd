@@ -166,7 +166,7 @@ func _try_open_offer(peer_id: int) -> void:
 	st.offer_deadline_msec = Time.get_ticks_msec() + int(balance.choice_time * 1000.0)
 	if Net.is_online():
 		cl_offer.rpc_id(peer_id, chosen, int(balance.choice_time * 1000.0))
-	else:
+	elif peer_id == Net.my_id():
 		cl_offer_local(chosen, int(balance.choice_time * 1000.0))
 
 func _process(_delta: float) -> void:
@@ -233,7 +233,7 @@ func _apply_choice(peer_id: int, id: StringName, auto: bool) -> void:
 	_toast(peer_id, "Улучшение: %s ур.%d%s" % [def.display_name, int(st.upgrade_levels[id]), suffix], "levelup")
 	if Net.is_online():
 		cl_offer_close.rpc_id(peer_id)
-	else:
+	elif peer_id == Net.my_id():
 		Events.upgrade_offer_closed.emit()
 	sync_to(peer_id)
 	_try_open_offer(peer_id) ## несколько накопленных уровней -> следующее предложение
@@ -421,14 +421,14 @@ func sync_to(peer_id: int) -> void:
 	var payload := st.to_sync_dict(balance)
 	if Net.is_online():
 		cl_prog.rpc_id(peer_id, payload)
-	else:
+	elif peer_id == Net.my_id():
 		local_state = payload
 		Events.progression_updated.emit(payload)
 
 func _toast(peer_id: int, text: String, kind: String) -> void:
 	if Net.is_online():
 		cl_toast.rpc_id(peer_id, text, kind)
-	else:
+	elif peer_id == Net.my_id():
 		Events.local_toast.emit(text, kind)
 
 func _shop_fail(peer_id: int, text: String) -> void:
