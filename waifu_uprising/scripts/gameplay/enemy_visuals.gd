@@ -3,7 +3,7 @@ extends Node3D
 ## Телеграф атаки (ТЗ §9.1): во время WINDUP персонаж откидывается и мигает золотом —
 ## атака читается с первого взгляда. Косметика; логика боя — в enemy_ai.gd (сервер).
 
-var enemy: EnemyFop
+var enemy: EnemyBase
 var _last_state: int = -1
 var _bob_time: float = 0.0
 var _materials: Array[StandardMaterial3D] = []
@@ -11,13 +11,14 @@ var _orig_emissions: Array[Color] = []
 var _pose_tween: Tween
 var _telegraph_pulse: float = 0.0
 var _base_scale: Vector3
-var _hat_mat: StandardMaterial3D
+var _accent_mat: StandardMaterial3D
 
-@onready var weapon_pivot: Node3D = $WeaponPivot
-@onready var hat: MeshInstance3D = $Hat
+@onready var weapon_pivot: Node3D = get_node_or_null(^"WeaponPivot")
+## Акцентная деталь для телеграфа: «Accent» у новых архетипов, «Hat» у Пижона.
+@onready var accent: MeshInstance3D = get_node_or_null(^"Accent") if get_node_or_null(^"Accent") != null else get_node_or_null(^"Hat")
 
 func _ready() -> void:
-	enemy = get_parent() as EnemyFop
+	enemy = get_parent() as EnemyBase
 	_base_scale = scale
 	scale = _base_scale * 0.35 ## появление: «вырастает» из точки спавна
 	var grow := create_tween()
@@ -31,9 +32,9 @@ func _ready() -> void:
 			mi.material_override = mat
 			_materials.append(mat)
 			_orig_emissions.append(mat.emission if mat.emission_enabled else Color.BLACK)
-	if hat != null:
-		_hat_mat = hat.get_active_material(0).duplicate() as StandardMaterial3D
-		hat.material_override = _hat_mat
+	if accent != null:
+		_accent_mat = accent.get_active_material(0).duplicate() as StandardMaterial3D
+		accent.material_override = _accent_mat
 
 func _process(delta: float) -> void:
 	if enemy == null or not is_instance_valid(enemy):
@@ -43,16 +44,16 @@ func _process(delta: float) -> void:
 		_on_state_changed(_last_state, st)
 		_last_state = st
 	match st:
-		EnemyFop.State.DEAD:
+		EnemyBase.State.DEAD:
 			pass ## падение и растворение запускаются в _on_state_changed
-		EnemyFop.State.WINDUP:
+		EnemyBase.State.WINDUP:
 			## Пульсирующий золотой телеграф + лёгкое покачивание.
 			_telegraph_pulse += delta * 14.0
 			var glow := (sin(_telegraph_pulse) * 0.5 + 0.5) * 3.5 + 0.5
-			if _hat_mat != null:
-				_hat_mat.emission_enabled = true
-				_hat_mat.emission = Color(1.0, 0.85, 0.2)
-				_hat_mat.emission_energy_multiplier = glow
+			if _accent_mat != null:
+				_accent_mat.emission_enabled = true
+				_accent_mat.emission = Color(1.0, 0.85, 0.2)
+				_accent_mat.emission_energy_multiplier = glow
 			rotation.z = sin(_telegraph_pulse * 0.5) * 0.06
 		_:
 			var hv := Vector2(enemy.velocity.x, enemy.velocity.z).length()
@@ -65,30 +66,33 @@ func _process(delta: float) -> void:
 				_bob_time += delta * 2.2
 				position.y = sin(_bob_time) * 0.03
 				rotation.z = lerpf(rotation.z, 0.0, delta * 6.0)
-			if _hat_mat != null:
-				_hat_mat.emission_energy_multiplier = lerpf(_hat_mat.emission_energy_multiplier, 0.4, delta * 8.0)
+			if _accent_mat != null:
+				_accent_mat.emission_energy_multiplier = lerpf(_accent_mat.emission_energy_multiplier, 0.4, delta * 8.0)
 
 func _on_state_changed(_from: int, to: int) -> void:
 	if _pose_tween != null and _pose_tween.is_valid():
 		_pose_tween.kill()
 	_pose_tween = null
 	match to:
-		EnemyFop.State.WINDUP: ## поклон перед выпадом
+		EnemyBase.State.WINDUP: ## поклон перед выпадом
 			_telegraph_pulse = 0.0
 			_pose_tween = create_tween()
 			_pose_tween.tween_property(self, "rotation:x", 0.25, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 			Sfx.play("count", -14.0, 0.75)
-		EnemyFop.State.STRIKE: ## выпад шпагой
+		EnemyBase.State.STRIKE: ## выпад шпагой
 			_pose_tween = create_tween()
 			_pose_tween.tween_property(self, "rotation:x", -0.35, 0.09).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			_pose_tween.parallel().tween_property(weapon_pivot, "position:z", -0.85, 0.09)
-			_pose_tween.tween_property(weapon_pivot, "position:z", -0.35, 0.25)
-			_pose_tween.parallel().tween_property(self, "rotation:x", 0.0, 0.25)
-		EnemyFop.State.HITSTUN: ## комичная пощёчина
+			if weapon_pivot != null:
+				_pose_tween.parallel().tween_property(weapon_pivot, "position:z", -0.85, 0.09)
+				_pose_tween.tween_property(weapon_pivot, "position:z", -0.35, 0.25)
+				_pose_tween.parallel().tween_property(self, "rotation:x", 0.0, 0.25)
+			else:
+				_pose_tween.parallel().tween_property(self, "rotation:x", 0.0, 0.25)
+		EnemyBase.State.HITSTUN: ## комичная пощёчина
 			_pose_tween = create_tween()
 			_pose_tween.tween_property(self, "rotation:z", 0.4, 0.06)
 			_pose_tween.tween_property(self, "rotation:z", 0.0, 0.2).set_trans(Tween.TRANS_BOUNCE)
-		EnemyFop.State.DEAD: ## драматичное падение
+		EnemyBase.State.DEAD: ## драматичное падение
 			_pose_tween = create_tween()
 			_pose_tween.tween_property(self, "rotation:x", -PI / 2.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			_pose_tween.parallel().tween_property(self, "position:y", -0.6, 0.9).set_delay(0.35)

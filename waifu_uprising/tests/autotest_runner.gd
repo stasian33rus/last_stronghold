@@ -172,8 +172,8 @@ func _nearest_enemy_to(anchor: Vector3) -> Node3D:
 	var best: Node3D = null
 	var best_d := 1e18
 	for candidate in get_tree().get_nodes_in_group("enemy_units"):
-		var foe := candidate as EnemyFop
-		if foe == null or foe.health.is_dead or foe.state == EnemyFop.State.DEAD:
+		var foe := candidate as EnemyBase
+		if foe == null or foe.health.is_dead or foe.state == EnemyBase.State.DEAD:
 			continue
 		var d := foe.global_position.distance_squared_to(anchor)
 		if d < best_d:

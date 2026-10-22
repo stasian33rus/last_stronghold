@@ -90,10 +90,24 @@ func _prog() -> ProgressionSystem:
 func _alive_enemies() -> Array:
 	var result: Array = []
 	for candidate in get_tree().get_nodes_in_group("enemy_units"):
-		var foe := candidate as EnemyFop
+		var foe := candidate as EnemyBase
 		if foe != null and not foe.health.is_dead:
 			result.append(foe)
 	return result
+
+func _find_enemy_of(def_id: String) -> EnemyBase:
+	for e in _alive_enemies():
+		var base := e as EnemyBase
+		if base != null and base.def != null and String(base.def.id) == def_id:
+			return base
+	return null
+
+## Отодвинуть и оглушить всех, кроме цели — детерминированные поведенческие проверки.
+func _isolate(except: Node) -> void:
+	for e in _alive_enemies():
+		if e != except:
+			e.global_position = Vector3(19.0, 0.2, 19.0)
+			e.apply_external_stun(2.0)
 
 func _has_timed_buff(st: ProgressionState) -> bool:
 	for b in st.buffs:
@@ -116,13 +130,30 @@ func _test_data_layers() -> void:
 	_check(wave_def != null and wave_def.total_count(1) == 5 and wave_def.total_count(8) == 19,
 		"WaveDefinition: масштабирование 1 игрок=5, 8 игроков=19 (формула 3+2N сохранена)")
 	var wave2 := load("res://resources/waves/wave_02.tres") as WaveDefinition
-	_check(wave2 != null and wave2.groups.size() >= 1 and wave2.total_count(2) == 4,
-		"WaveDefinition groups: волна 2 (2 игрока) = %d" % (wave2.total_count(2) if wave2 != null else -1))
+	_check(wave2 != null and wave2.groups.size() == 2 and wave2.total_count(2) == 5,
+		"WaveDefinition groups: волна 2 (2 игрока) = 4 Пижона + 1 Громила = %d" % (wave2.total_count(2) if wave2 != null else -1))
 	_check(Content.all_upgrades().size() >= 12, "Реестр улучшений: >=12 (%d)" % Content.all_upgrades().size())
 	_check(Content.all_shop_items().size() >= 5, "Реестр магазина: >=5 (%d)" % Content.all_shop_items().size())
 	var bal := load(Game.BALANCE_DEFAULT) as ProgressionBalance
 	_check(bal != null and bal.xp_required(1) == 100 and bal.xp_required(3) == 200,
 		"Баланс прогрессии: формула 100+50×(L−1)")
+	for arch in [["brute", "Громила"], ["shadow", "Тень"], ["spitter", "Плевальщик"]]:
+		var adef := load("res://resources/enemies/%s.tres" % arch[0]) as EnemyDefinition
+		_check(adef != null and adef.display_name == arch[1], "EnemyDefinition %s загружен" % arch[1])
+		if adef != null:
+			var ascene := load(adef.scene_path) as PackedScene
+			_check(ascene != null, "Сцена %s загружается" % arch[1])
+	var w4 := load("res://resources/waves/wave_04.tres") as WaveDefinition
+	var w4_paths: Array = []
+	if w4 != null:
+		for g in w4.groups:
+			w4_paths.append(g.enemy_def_path)
+	_check(w4 != null and w4.groups.size() == 4
+			and w4_paths.has("res://resources/enemies/fop.tres")
+			and w4_paths.has("res://resources/enemies/brute.tres")
+			and w4_paths.has("res://resources/enemies/shadow.tres")
+			and w4_paths.has("res://resources/enemies/spitter.tres"),
+		"Волна 4: состав из всех 4 архетипов")
 	for path in [
 		"res://scenes/characters/player.tscn",
 		"res://scenes/enemies/fop.tscn",
@@ -162,7 +193,7 @@ func _test_full_match_flow() -> void:
 	## --- Настоящий бой: удар игрока наносит урон и отбрасывает врага.
 	var pawn := _local_pawn()
 	var enemies := _alive_enemies()
-	var foe: EnemyFop = enemies[0]
+	var foe: EnemyBase = enemies[0]
 	foe.global_position = pawn.global_position + Vector3(0.0, 0.0, -1.7)
 	pawn.rotation.y = 0.0
 	foe.apply_external_stun(2.0)
@@ -205,7 +236,7 @@ func _test_full_match_flow() -> void:
 	var giga := _giga()
 	pawn.global_position = Vector3(17.0, 0.2, 17.0)
 	for e in _alive_enemies():
-		(e as EnemyFop).global_position = giga.global_position + Vector3(randf_range(-2.5, 2.5), 0.0, randf_range(2.6, 3.2))
+		(e as EnemyBase).global_position = giga.global_position + Vector3(randf_range(-2.5, 2.5), 0.0, randf_range(2.6, 3.2))
 	var giga_hp_before := giga.health.health
 	var giga_hurt: bool = await _wait_until(func(): return giga.health.health < giga_hp_before, 8.0)
 	_check(giga_hurt or _alive_enemies().is_empty(),
@@ -289,9 +320,15 @@ func _test_full_match_flow() -> void:
 		if not has_enemies:
 			_check(false, "Волна %d: враги появились" % wave_idx)
 			break
+		if wave_idx == 2:
+			await _test_brute()
+		elif wave_idx == 3:
+			await _test_shadow()
+		elif wave_idx == 4:
+			await _test_spitter()
 		var cleared: bool = await _wait_until(func():
 			_kill_all_enemies()
-			return mc.phase != MatchController.Phase.FIGHT, 12.0)
+			return mc.phase != MatchController.Phase.FIGHT, 15.0)
 		_check(cleared, "Волна %d: все враги уничтожены (включая допавшихся)" % wave_idx)
 		if wave_idx < 4:
 			var inter_n: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.INTERMISSION, 10.0)
@@ -312,6 +349,8 @@ func _test_full_match_flow() -> void:
 			_check(vic, "ПОБЕДА после финальной волны 4")
 
 	_check(_waves_started_log == [1, 2, 3, 4], "Каждая волна стартовала ровно один раз: %s" % str(_waves_started_log))
+	var proj_clean: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").is_empty(), 4.0)
+	_check(proj_clean, "Снаряды удалены после завершения матча")
 	var stats: Dictionary = mc.stats
 	_check(stats.has(1) and int(stats[1]["kills"]) >= 10, "Статистика убийств посчитана сервером (kills=%d)" % int(stats[1]["kills"]))
 
@@ -506,3 +545,65 @@ func _test_defeat_and_down_flow() -> void:
 	var obj_match2 := int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	_check(obj_match2 <= _obj_after_match1 + 20,
 		"Нет роста объектов между матчами (%d после матча 1 -> %d после матча 2)" % [_obj_after_match1, obj_match2])
+
+
+# ------------------------------------------------------------------ архетипы (Этап 2)
+
+func _test_brute() -> void:
+	var brute: EnemyBase = await _wait_until_and_get(func(): return _find_enemy_of("brute"), 8.0)
+	_check(brute != null, "Волна 2: «Громила» появился на арене")
+	if brute == null:
+		return
+	_isolate(brute)
+	## Уязвимость во время восстановления (ТЗ 8.1).
+	brute._set_state(EnemyBase.State.RECOVER)
+	_check(is_equal_approx(brute.health.incoming_damage_multiplier, brute.def.recover_damage_mult),
+		"Громила: в RECOVER уязвимость ×%.1f" % brute.def.recover_damage_mult)
+	var hp0 := brute.health.health
+	brute.health.take_damage(Units.make_damage(10.0, _local_pawn(), 1, Vector3.FORWARD, 0.0, brute.global_position))
+	_check(is_equal_approx(hp0 - brute.health.health, 10.0 * brute.def.recover_damage_mult),
+		"Громила: урон в RECOVER умножен (%.0f -> %.0f)" % [hp0, brute.health.health])
+	_check(is_equal_approx(brute.health.incoming_damage_multiplier, 1.0),
+		"Громила: уязвимость спадает после выхода из RECOVER")
+	_check(brute.def.category == 1, "Громила — элита (категория наград 1)")
+
+func _test_shadow() -> void:
+	var shadow: EnemyBase = await _wait_until_and_get(func(): return _find_enemy_of("shadow"), 8.0)
+	_check(shadow != null, "Волна 3: «Тень» появилась на арене")
+	if shadow == null:
+		return
+	_isolate(shadow)
+	var giga := _giga()
+	var hp0 := giga.health.health
+	## Ставим в 6 м: дальше dash_min_range — должен сделать рывок и провести серию.
+	shadow.global_position = giga.global_position + Vector3(6.0, 0.0, 0.0)
+	var hit: bool = await _wait_until(func(): return giga.health.health < hp0, 6.0)
+	_check(hit, "Тень: рывок и серия ударов достигают цели (−%.0f hp Гигачада)" % (hp0 - giga.health.health))
+	_check(shadow.def.attack_hits == 3, "Тень: серия из 3 ударов (данные)")
+
+func _test_spitter() -> void:
+	var spitter: EnemyBase = await _wait_until_and_get(func(): return _find_enemy_of("spitter"), 8.0)
+	_check(spitter != null, "Волна 4: «Плевальщик» появился на арене")
+	if spitter == null:
+		return
+	_isolate(spitter)
+	var giga := _giga()
+	var hp0 := giga.health.health
+	spitter.global_position = giga.global_position + Vector3(0.0, 0.0, 8.0)
+	var proj_seen: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").size() > 0, 6.0)
+	_check(proj_seen, "Плевальщик: серверный снаряд создан")
+	var hit: bool = await _wait_until(func(): return giga.health.health < hp0, 6.0)
+	_check(hit, "Плевальщик: снаряд попал по цели (−%.0f hp Гигачада)" % (hp0 - giga.health.health))
+	spitter.apply_external_stun(6.0) ## остановить стрельбу для проверок очистки
+	var cleaned: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").is_empty(), 5.0)
+	_check(cleaned, "Снаряд удалён после попадания (очистка)")
+	## Лимит одновременных снарядов (защита от сетевого шторма).
+	var arena := get_tree().current_scene
+	var spawned := 0
+	for i in 25:
+		if arena.spawn_projectile(giga.global_position + Vector3(0.0, 3.0, 0.0), Vector3.UP, spitter.def) != null:
+			spawned += 1
+	_check(spawned <= 16 and spawned > 0, "Лимит одновременных снарядов: создано %d из 25 (предел 16)" % spawned)
+	get_tree().call_group(&"projectiles", "expire_now")
+	await _frames(2)
+	_check(get_tree().get_nodes_in_group("projectiles").is_empty(), "Снаряды очищены expire_now")

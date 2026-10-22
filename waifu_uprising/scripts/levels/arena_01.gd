@@ -10,7 +10,12 @@ extends Node3D
 
 const PLAYER_SCENE: PackedScene = preload("res://scenes/characters/player.tscn")
 
+const MAX_PROJECTILES: int = 16
+
+var _projectile_count: int = 0
+
 func _ready() -> void:
+	add_to_group("arena")
 	spawner.spawn_function = _on_spawn_request
 	if Net.is_server():
 		Net.peer_left.connect(_on_peer_left_during_match)
@@ -68,6 +73,28 @@ func spawn_enemy(def: EnemyDefinition, pos: Vector3) -> Node:
 		"pos": pos,
 	})
 
+## Серверный снаряд Плевальщика: глобальный лимит одновременных (производительность,
+## «никаких сетевых штормов»), очистка по попаданию/таймауту/концу матча.
+func spawn_projectile(muzzle: Vector3, dir: Vector3, def: EnemyDefinition) -> Node:
+	if not Net.is_server():
+		return null
+	if _projectile_count >= MAX_PROJECTILES:
+		return null
+	var node := spawner.spawn({
+		"kind": "projectile",
+		"scene": def.projectile_scene,
+		"pos": muzzle,
+		"dir": dir,
+		"speed": def.projectile_speed,
+		"dmg": def.attack_damage,
+		"kb": def.attack_knockback,
+		"life": def.projectile_lifetime,
+	})
+	if node != null:
+		_projectile_count += 1
+		node.tree_exited.connect(func() -> void: _projectile_count = maxi(0, _projectile_count - 1))
+	return node
+
 ## Вызывается MultiplayerSpawner на ВСЕХ пирах с одинаковыми данными.
 func _on_spawn_request(data: Dictionary) -> Node:
 	match str(data.get("kind", "")):
@@ -78,6 +105,19 @@ func _on_spawn_request(data: Dictionary) -> Node:
 			pawn.class_id = StringName(str(data.get("class_id", "berserk")))
 			pawn.position = data.get("pos", Vector3.ZERO)
 			return pawn
+		"projectile":
+			var proj_scene := load(str(data.get("scene", ""))) as PackedScene
+			if proj_scene == null:
+				push_error("[Arena] spawn_projectile: сцена не найдена")
+				return null
+			var proj: SpitProjectile = proj_scene.instantiate()
+			proj.position = data.get("pos", Vector3.ZERO)
+			proj.direction = data.get("dir", Vector3.FORWARD)
+			proj.speed = float(data.get("speed", 15.0))
+			proj.damage = float(data.get("dmg", 12.0))
+			proj.knockback = float(data.get("kb", 3.0))
+			proj.lifetime = float(data.get("life", 3.0))
+			return proj
 		"enemy":
 			var def := load(str(data.get("def_path", ""))) as EnemyDefinition
 			if def == null:
@@ -87,7 +127,7 @@ func _on_spawn_request(data: Dictionary) -> Node:
 			if enemy_scene == null:
 				push_error("[Arena] spawn_enemy: не найдена сцена %s" % def.scene_path)
 				return null
-			var foe: EnemyFop = enemy_scene.instantiate()
+			var foe: EnemyBase = enemy_scene.instantiate()
 			foe.def = def
 			foe.position = data.get("pos", Vector3.ZERO)
 			return foe

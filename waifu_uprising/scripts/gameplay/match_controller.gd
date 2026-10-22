@@ -272,6 +272,8 @@ func _end_match(result_phase: int) -> void:
 	## Спавн волн немедленно прекращается (никаких врагов после победы/поражения).
 	if _wave_manager != null:
 		_wave_manager.stop_waves()
+	## Снаряды корректно удаляются при завершении матча.
+	get_tree().call_group(&"projectiles", "expire_now")
 	_broadcast_state()
 	print("[Match] Матч завершён: %s, время %.1f с" % ["ПОБЕДА" if result_phase == Phase.VICTORY else "ПОРАЖЕНИЕ", match_time])
 	if Net.is_online():
@@ -288,7 +290,7 @@ func cl_final_stats(final_stats: Dictionary, final_time: float) -> void:
 func _on_enemy_spawned(enemy: Node) -> void:
 	if not Net.is_server():
 		return
-	var foe := enemy as EnemyFop
+	var foe := enemy as EnemyBase
 	if foe == null:
 		return
 	foe.health.damage_taken.connect(_on_enemy_damaged)
@@ -299,7 +301,7 @@ func _on_enemy_damaged(amount: float, damage: Dictionary) -> void:
 	if stats.has(attacker):
 		stats[attacker]["damage"] = float(stats[attacker]["damage"]) + amount
 
-func _on_enemy_died_for_stats(_foe: EnemyFop, damage: Dictionary) -> void:
+func _on_enemy_died_for_stats(_foe: EnemyBase, damage: Dictionary) -> void:
 	register_kill(int(damage.get("attacker_peer", 0)))
 
 func register_kill(attacker_peer: int) -> void:

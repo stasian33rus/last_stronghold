@@ -1,0 +1,125 @@
+[gd_scene load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://scripts/ai/enemy_spitter.gd" id="1_spit"]
+[ext_resource type="Script" path="res://scripts/gameplay/enemy_visuals.gd" id="2_evis"]
+[ext_resource type="Script" path="res://scripts/combat/hitbox_component.gd" id="3_hitbox"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="4_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="5_health"]
+[ext_resource type="Script" path="res://scripts/physics/knockback_component.gd" id="6_kb"]
+[ext_resource type="Script" path="res://scripts/networking/body_sync.gd" id="7_sync"]
+
+[sub_resource type="CapsuleShape3D" id="shape_body"]
+radius = 0.45
+height = 1.6
+
+[sub_resource type="StandardMaterial3D" id="mat_body"]
+albedo_color = Color(0.42, 0.22, 0.58, 1)
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="mesh_belly"]
+material = SubResource("mat_body")
+radius = 0.55
+height = 1.1
+
+[sub_resource type="CapsuleMesh" id="mesh_legs"]
+material = SubResource("mat_body")
+radius = 0.3
+height = 0.9
+
+[sub_resource type="StandardMaterial3D" id="mat_skin"]
+albedo_color = Color(0.92, 0.85, 0.9, 1)
+roughness = 0.6
+
+[sub_resource type="SphereMesh" id="mesh_head"]
+material = SubResource("mat_skin")
+radius = 0.25
+height = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_mask"]
+albedo_color = Color(0.4, 1, 0.55, 1)
+emission_enabled = true
+emission = Color(0.35, 1, 0.5, 1)
+emission_energy_multiplier = 1.2
+
+[sub_resource type="SphereMesh" id="mesh_mask"]
+material = SubResource("mat_mask")
+radius = 0.18
+height = 0.36
+
+[sub_resource type="CylinderMesh" id="mesh_cannon"]
+material = SubResource("mat_mask")
+top_radius = 0.12
+bottom_radius = 0.18
+height = 0.7
+
+[sub_resource type="SphereShape3D" id="shape_hitbox"]
+radius = 0.5
+
+[sub_resource type="CapsuleShape3D" id="shape_hurtbox"]
+radius = 0.5
+height = 1.55
+
+[node name="Spitter" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 15
+script = ExtResource("1_spit")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("shape_body")
+
+[node name="Visuals" type="Node3D" parent="."]
+script = ExtResource("2_evis")
+
+[node name="Legs" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+mesh = SubResource("mesh_legs")
+
+[node name="Body" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0)
+mesh = SubResource("mesh_belly")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.85, 0)
+mesh = SubResource("mesh_head")
+
+[node name="Accent" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.87, -0.2)
+mesh = SubResource("mesh_mask")
+
+[node name="WeaponPivot" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.35)
+
+[node name="Cannon" type="MeshInstance3D" parent="Visuals/WeaponPivot"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.3)
+mesh = SubResource("mesh_cannon")
+
+[node name="Hitbox" type="Area3D" parent="."]
+collision_layer = 32
+collision_mask = 64
+monitoring = false
+monitorable = false
+script = ExtResource("3_hitbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hitbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -1)
+shape = SubResource("shape_hitbox")
+
+[node name="Hurtbox" type="Area3D" parent="."]
+collision_layer = 128
+collision_mask = 0
+monitoring = false
+script = ExtResource("4_hurtbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("shape_hurtbox")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("5_health")
+
+[node name="Knockback" type="Node" parent="."]
+script = ExtResource("6_kb")
+
+[node name="BodySync" type="Node" parent="."]
+script = ExtResource("7_sync")

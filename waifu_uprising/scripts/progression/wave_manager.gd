@@ -111,7 +111,7 @@ func _spawn_one() -> void:
 		return
 	var marker: Marker3D = points[_rng.randi() % points.size()]
 	var jitter := Vector3(_rng.randf_range(-1.5, 1.5), 0.1, _rng.randf_range(-1.5, 1.5))
-	var enemy: EnemyFop = arena.spawn_enemy(def, marker.global_position + jitter)
+	var enemy: EnemyBase = arena.spawn_enemy(def, marker.global_position + jitter)
 	if enemy != null:
 		enemies_in_queue -= 1
 		enemies_alive += 1
@@ -121,7 +121,7 @@ func _spawn_one() -> void:
 		## Спавн не удался — не теряем счётчик (иначе волна «зависнет» недосчитанной).
 		_spawn_queue.push_front(def_path)
 
-func _on_enemy_died(_enemy: EnemyFop, _damage: Dictionary) -> void:
+func _on_enemy_died(_enemy: EnemyBase, _damage: Dictionary) -> void:
 	enemies_alive = maxi(0, enemies_alive - 1)
 	if not _active:
 		return

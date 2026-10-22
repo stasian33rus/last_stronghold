@@ -28,3 +28,23 @@ extends Resource
 @export var hitstun_time: float = 0.28
 @export var heavy_hitstun_threshold: float = 7.0 ## Отбрасывание сильнее этого значения -> длительный стаггер.
 @export var heavy_hitstun_time: float = 0.5
+
+## --- Поведенческие параметры архетипов (Этап 2) ---
+## Урон по врагу в состоянии RECOVER умножается на это значение («уязвимость
+## после тяжёлой атаки» — Громила). 1.0 = без уязвимости.
+@export var recover_damage_mult: float = 1.0
+## Серия ударов (Тень): число попаданий за STRIKE и интервал между ними.
+@export var attack_hits: int = 1
+@export var attack_hit_interval: float = 0.0
+## Рывок к цели (Тень): 0 = не используется.
+@export var dash_speed: float = 0.0
+@export var dash_duration: float = 0.22
+@export var dash_cooldown: float = 2.5
+@export var dash_min_range: float = 4.5
+## Дальний бой (Плевальщик).
+@export var ranged: bool = false
+@export var projectile_scene: String = "res://scenes/enemies/spit_projectile.tscn"
+@export var projectile_speed: float = 15.0
+@export var projectile_lifetime: float = 3.0
+@export var keep_distance: float = 9.0 ## Дистанция, которую держит стрелок.
+@export var min_distance: float = 5.5 ## Ближе — отступает.

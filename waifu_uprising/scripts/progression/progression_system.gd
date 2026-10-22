@@ -50,13 +50,13 @@ func _setup_server() -> void:
 func _register_enemy(enemy: Node) -> void:
 	if not Net.is_server():
 		return
-	var foe := enemy as EnemyFop
+	var foe := enemy as EnemyBase
 	if foe == null:
 		return
 	foe.health.damage_taken.connect(_on_enemy_damaged_xp.bind(foe))
 	foe.died_on_server.connect(_on_enemy_died_rewards)
 
-func _on_enemy_damaged_xp(amount: float, damage: Dictionary, foe: EnemyFop) -> void:
+func _on_enemy_damaged_xp(amount: float, damage: Dictionary, foe: EnemyBase) -> void:
 	var peer := int(damage.get("attacker_peer", 0))
 	if not states.has(peer):
 		return
@@ -66,7 +66,7 @@ func _on_enemy_damaged_xp(amount: float, damage: Dictionary, foe: EnemyFop) -> v
 	_contrib[key] = entry
 
 ## Награда РОВНО ОДИН раз за смерть: XP пропорционально вкладу урона, монеты — добившему.
-func _on_enemy_died_rewards(foe: EnemyFop, killing_damage: Dictionary) -> void:
+func _on_enemy_died_rewards(foe: EnemyBase, killing_damage: Dictionary) -> void:
 	if not Net.is_server():
 		return
 	if foe.has_meta("rewards_granted"):

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="WaveDefinition" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="WaveDefinition" load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/data/wave_definition.gd" id="1_wv"]
 [ext_resource type="Script" path="res://scripts/data/wave_group.gd" id="2_wg"]
@@ -9,11 +9,29 @@ enemy_def_path = "res://resources/enemies/fop.tres"
 count_base = 3
 count_per_player = 1
 
+[sub_resource type="Resource" id="g1"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/shadow.tres"
+count_base = 2
+count_per_player = 1
+
+[sub_resource type="Resource" id="g2"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/brute.tres"
+count_base = 1
+count_per_player = 0
+
+[sub_resource type="Resource" id="g3"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/spitter.tres"
+count_base = 1
+count_per_player = 0
+
 [resource]
 script = ExtResource("1_wv")
 index = 4
-display_name = "Гранд-финаль акта"
+display_name = "Гранд-финал акта"
 intro_delay = 1.2
 spawn_interval = 0.5
 max_alive = 14
-groups = Array[ExtResource("2_wg")]([SubResource("g0")])
+groups = Array[ExtResource("2_wg")]([SubResource("g0"), SubResource("g1"), SubResource("g2"), SubResource("g3")])

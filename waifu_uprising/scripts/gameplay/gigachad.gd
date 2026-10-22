@@ -90,7 +90,7 @@ func _discharge_pulse() -> void:
 			pawn.health.heal(pulse_heal * team_pulse_heal_mult)
 	## Отбрасывание врагов — физически ощутимая волна.
 	for unit in get_tree().get_nodes_in_group("enemy_units"):
-		var foe := unit as EnemyFop
+		var foe := unit as EnemyBase
 		if foe == null or foe.health.is_dead:
 			continue
 		var d := foe.global_position - center

@@ -1,0 +1,110 @@
+[gd_scene load_steps=18 format=3]
+
+[ext_resource type="Script" path="res://scripts/ai/enemy_shadow.gd" id="1_shadow"]
+[ext_resource type="Script" path="res://scripts/gameplay/enemy_visuals.gd" id="2_evis"]
+[ext_resource type="Script" path="res://scripts/combat/hitbox_component.gd" id="3_hitbox"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="4_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="5_health"]
+[ext_resource type="Script" path="res://scripts/physics/knockback_component.gd" id="6_kb"]
+[ext_resource type="Script" path="res://scripts/networking/body_sync.gd" id="7_sync"]
+
+[sub_resource type="CapsuleShape3D" id="shape_body"]
+radius = 0.3
+height = 1.5
+
+[sub_resource type="StandardMaterial3D" id="mat_body"]
+albedo_color = Color(0.1, 0.08, 0.18, 1)
+roughness = 0.35
+metallic = 0.3
+
+[sub_resource type="CapsuleMesh" id="mesh_body"]
+material = SubResource("mat_body")
+radius = 0.24
+height = 1.2
+
+[sub_resource type="SphereMesh" id="mesh_head"]
+material = SubResource("mat_body")
+radius = 0.19
+height = 0.38
+
+[sub_resource type="StandardMaterial3D" id="mat_visor"]
+albedo_color = Color(0.1, 0.9, 1, 1)
+emission_enabled = true
+emission = Color(0.2, 0.95, 1, 1)
+emission_energy_multiplier = 1.6
+
+[sub_resource type="BoxMesh" id="mesh_visor"]
+material = SubResource("mat_visor")
+size = Vector3(0.3, 0.06, 0.08)
+
+[sub_resource type="BoxMesh" id="mesh_dagger"]
+material = SubResource("mat_visor")
+size = Vector3(0.035, 0.035, 0.7)
+
+[sub_resource type="SphereShape3D" id="shape_hitbox"]
+radius = 0.75
+
+[sub_resource type="CapsuleShape3D" id="shape_hurtbox"]
+radius = 0.38
+height = 1.4
+
+[node name="Shadow" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 15
+script = ExtResource("1_shadow")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.78, 0)
+shape = SubResource("shape_body")
+
+[node name="Visuals" type="Node3D" parent="."]
+script = ExtResource("2_evis")
+
+[node name="Body" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, 0)
+mesh = SubResource("mesh_body")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+mesh = SubResource("mesh_head")
+
+[node name="Accent" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.47, -0.17)
+mesh = SubResource("mesh_visor")
+
+[node name="WeaponPivot" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.95, -0.15)
+
+[node name="Dagger" type="MeshInstance3D" parent="Visuals/WeaponPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.9396926, 0.34202012, 0, -0.34202012, 0.9396926, 0, 0, -0.3)
+mesh = SubResource("mesh_dagger")
+
+[node name="Hitbox" type="Area3D" parent="."]
+collision_layer = 32
+collision_mask = 64
+monitoring = false
+monitorable = false
+script = ExtResource("3_hitbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hitbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -1.25)
+shape = SubResource("shape_hitbox")
+
+[node name="Hurtbox" type="Area3D" parent="."]
+collision_layer = 128
+collision_mask = 0
+monitoring = false
+script = ExtResource("4_hurtbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.78, 0)
+shape = SubResource("shape_hurtbox")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("5_health")
+
+[node name="Knockback" type="Node" parent="."]
+script = ExtResource("6_kb")
+
+[node name="BodySync" type="Node" parent="."]
+script = ExtResource("7_sync")
