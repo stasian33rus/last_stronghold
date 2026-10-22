@@ -1,0 +1,255 @@
+class_name EnemyFop
+extends CharacterBody3D
+## «Пижон» — ближний боец Ордена Гламура (ТЗ §9.1). Этап 1: единственный архетип врага.
+## FSM: SPAWN -> CHASE -> WINDUP (телеграф) -> STRIKE (выпад) -> RECOVER -> CHASE.
+## ИИ и бой считаются ТОЛЬКО на сервере; клиенты получают снапшоты через BodySync.
+
+enum State { SPAWN = 0, CHASE = 1, WINDUP = 2, STRIKE = 3, RECOVER = 4, HITSTUN = 5, DEAD = 6 }
+
+const GRAVITY: float = 24.0
+
+var team: int = Units.Team.ENEMY
+var owner_peer: int = 1 ## враги всегда принадлежат серверу
+var def: EnemyDefinition
+var state: int = State.SPAWN
+
+signal died_on_server(enemy: EnemyFop, damage: Dictionary)
+
+var _state_time: float = 0.0
+var _target: Node3D
+var _retarget_in: float = 0.0
+var _ctrl_vel := Vector3.ZERO ## управляемая составляющая скорости (без отбрасывания)
+var _lunge_dir := Vector3.ZERO
+var _strike_hitbox_on := false
+var _corpse_timer: float = -1.0
+
+@onready var health: HealthComponent = $Health
+@onready var hitbox: HitboxComponent = $Hitbox
+@onready var kb: KnockbackComponent = $Knockback
+@onready var visuals: Node3D = $Visuals
+
+func _ready() -> void:
+	if def == null:
+		push_error("[EnemyFop] Не задан EnemyDefinition")
+		return
+	add_to_group("enemy_units")
+	health.setup(def.max_health)
+	hitbox.damage = def.attack_damage
+	hitbox.knockback_force = def.attack_knockback
+	hitbox.owner_team = Units.Team.ENEMY
+	health.died.connect(_on_died)
+	health.damage_taken.connect(_on_damaged)
+
+func get_health() -> HealthComponent:
+	return health
+
+func _physics_process(delta: float) -> void:
+	if not Net.is_server():
+		return ## на клиентах тело двигает BodySync-интерполяция
+	_server_ai(delta)
+
+func _server_ai(delta: float) -> void:
+	_state_time += delta
+	match state:
+		State.SPAWN:
+			_decay_ctrl(delta, 2.0)
+			if _state_time >= 0.35:
+				_set_state(State.CHASE)
+		State.CHASE:
+			_chase(delta)
+		State.WINDUP:
+			## Стойка/поклон перед выпадом — цель может уйти, бьём туда, где стояли.
+			_decay_ctrl(delta, 2.0)
+			if _state_time >= def.attack_windup:
+				_set_state(State.STRIKE)
+		State.STRIKE:
+			if not _strike_hitbox_on:
+				_strike_hitbox_on = true
+				hitbox.activate(def.attack_active)
+				_lunge_dir = _dir_to_target()
+			_ctrl_vel = _lunge_dir * def.attack_lunge_speed
+			if _state_time >= def.attack_active:
+				hitbox.deactivate()
+				_set_state(State.RECOVER)
+		State.RECOVER:
+			_decay_ctrl(delta, 1.0)
+			if _state_time >= def.attack_recover:
+				_set_state(State.CHASE)
+		State.HITSTUN:
+			_decay_ctrl(delta, 0.5)
+			if _state_time >= _hitstun_duration:
+				_set_state(State.CHASE)
+		State.DEAD:
+			## Труп: только физика (отбрасывание доигрывается), затем удаление.
+			hitbox.deactivate()
+			_decay_ctrl(delta, 1.0)
+			if _corpse_timer >= 0.0:
+				_corpse_timer -= delta
+				if _corpse_timer <= 0.0:
+					queue_free() ## MultiplayerSpawner удалит труп и на клиентах
+
+	## Итоговая скорость = управление + отбрасывание (КБ не накапливается).
+	var kb_vel := kb.consume(delta)
+	velocity.x = _ctrl_vel.x + kb_vel.x
+	velocity.z = _ctrl_vel.z + kb_vel.z
+	_apply_gravity(delta)
+	if kb_vel.y > 0.0 and is_on_floor():
+		velocity.y = kb_vel.y
+	move_and_slide()
+
+func _decay_ctrl(delta: float, friction_factor: float = 1.0) -> void:
+	var f := def.friction * friction_factor * delta
+	_ctrl_vel.x = move_toward(_ctrl_vel.x, 0.0, f)
+	_ctrl_vel.z = move_toward(_ctrl_vel.z, 0.0, f)
+
+var _hitstun_duration: float = 0.28
+
+func _set_state(new_state: int) -> void:
+	if state == new_state:
+		return
+	state = new_state
+	_state_time = 0.0
+	if new_state == State.STRIKE:
+		_strike_hitbox_on = false
+
+func _chase(delta: float) -> void:
+	_retarget_in -= delta
+	if _target == null or not is_instance_valid(_target) or _retarget_in <= 0.0:
+		_target = _acquire_target()
+		_retarget_in = 0.5
+	if _target == null:
+		_decay_ctrl(delta)
+		return
+	var to_target := _target.global_position - global_position
+	to_target.y = 0.0
+	var dist := to_target.length()
+	if dist > 0.05:
+		var dir := to_target / dist
+		## Лицом к цели (-Z вперёд).
+		var desired_yaw := atan2(-dir.x, -dir.z)
+		rotation.y = lerp_angle(rotation.y, desired_yaw, minf(1.0, delta * 10.0))
+		if dist > def.attack_range * 0.8:
+			_ctrl_vel.x = move_toward(_ctrl_vel.x, dir.x * def.move_speed, def.acceleration * delta)
+			_ctrl_vel.z = move_toward(_ctrl_vel.z, dir.z * def.move_speed, def.acceleration * delta)
+		else:
+			_decay_ctrl(delta)
+	if dist <= def.attack_range and _target_is_valid_target():
+		_set_state(State.WINDUP)
+
+func _target_is_valid_target() -> bool:
+	if _target == null or not is_instance_valid(_target):
+		return false
+	var t_health := _target.get_node_or_null(^"Health") as HealthComponent
+	if t_health == null or t_health.is_dead:
+		return false
+	if _target is PlayerPawn and _target.state == PlayerPawn.State.DOWN:
+		return false
+	return true
+
+## Ближайшая живая цель из героев (игроки и Гигачад). Лежачих игроков не бьём.
+func _acquire_target() -> Node3D:
+	var best: Node3D = null
+	var best_dist := def.aggro_radius
+	for unit in get_tree().get_nodes_in_group("hero_units"):
+		var n3 := unit as Node3D
+		if n3 == null or not is_instance_valid(n3):
+			continue
+		var h := n3.get_node_or_null(^"Health") as HealthComponent
+		if h == null or h.is_dead:
+			continue
+		if n3 is PlayerPawn and n3.state == PlayerPawn.State.DOWN:
+			continue
+		var d := n3.global_position.distance_to(global_position)
+		if d < best_dist:
+			best_dist = d
+			best = n3
+	return best
+
+## Внешний стаггер (Волна Резонанса Гигачада / будущие командные комбо, Этап 4). Только сервер.
+func apply_external_stun(duration: float) -> void:
+	if not Net.is_server() or state == State.DEAD:
+		return
+	hitbox.deactivate()
+	_hitstun_duration = duration
+	_set_state(State.HITSTUN)
+
+func _dir_to_target() -> Vector3:
+	if _target == null or not is_instance_valid(_target):
+		return -global_transform.basis.z
+	var d := _target.global_position - global_position
+	d.y = 0.0
+	return d.normalized() if d.length_squared() > 0.001 else -global_transform.basis.z
+
+func _apply_gravity(delta: float) -> void:
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	else:
+		velocity.y = maxf(velocity.y, -1.0)
+
+# ------------------------------------------------------------------ реакция на урон
+
+func _on_damaged(_amount: float, damage: Dictionary) -> void:
+	if not Net.is_server() or state == State.DEAD:
+		return
+	hitbox.deactivate()
+	var force := float(damage.get("knockback_force", 0.0))
+	kb.apply(damage.get("knockback_dir", Vector3.ZERO), force, def.knockback_mass)
+	## Отбрасывание с весом: сильный удар -> длительный стаггер, прерывает выпад (ТЗ §13).
+	if force >= def.heavy_hitstun_threshold or state == State.WINDUP:
+		_hitstun_duration = def.heavy_hitstun_time
+	else:
+		_hitstun_duration = def.hitstun_time
+	_set_state(State.HITSTUN)
+	fx_hit.rpc(damage.get("hit_position", global_position), float(damage.get("amount", 0.0)), int(damage.get("attacker_peer", 1)))
+
+func _on_died(damage: Dictionary) -> void:
+	if not Net.is_server():
+		return
+	hitbox.deactivate()
+	kb.apply(damage.get("knockback_dir", Vector3.FORWARD), float(damage.get("knockback_force", 6.0)) * 1.5, def.knockback_mass)
+	_set_state(State.DEAD)
+	_corpse_timer = 2.2
+	collision_mask = 1 ## труп скользит только по миру
+	fx_die.rpc()
+	died_on_server.emit(self, damage)
+
+# ------------------------------------------------------------------ репликация
+
+func get_sync_payload() -> Dictionary:
+	return {
+		"p": global_position,
+		"y": rotation.y,
+		"v": velocity,
+		"s": state,
+		"hp": health.health,
+		"dead": health.is_dead,
+	}
+
+func apply_sync_payload(payload: Dictionary) -> void:
+	if payload.has("p"):
+		global_position = payload["p"]
+	if payload.has("y"):
+		rotation.y = payload["y"]
+	if payload.has("v"):
+		velocity = payload["v"]
+	if payload.has("hp"):
+		health.replicate_state(float(payload["hp"]), bool(payload.get("dead", false)))
+	var new_state := int(payload.get("s", state))
+	if new_state != state:
+		state = new_state
+		Events.sync_state_changed.emit(self, state)
+
+# ------------------------------------------------------------------ косметические RPC
+
+@rpc("authority", "call_local", "unreliable")
+func fx_hit(hit_pos: Vector3, amount: float, attacker_peer: int) -> void:
+	VisualFx.hit_flash(self)
+	VisualFx.damage_number(hit_pos, amount, Color(1.0, 0.9, 0.4))
+	Sfx.play("hit", -6.0)
+	if attacker_peer == Net.my_id():
+		Events.local_hitstop_request.emit(hit_pos, 0.25)
+		Sfx.play("heavy_hit", -10.0, randf_range(0.95, 1.1))
+
+@rpc("authority", "call_local", "unreliable")
+func fx_die() -> void:
+	pass ## звук/поза смерти играет вражеский визуал по смене состояния

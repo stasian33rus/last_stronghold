@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="WaveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/wave_definition.gd" id="1_wv"]
+
+[resource]
+script = ExtResource("1_wv")
+index = 1
+display_name = "Дебют Ордена Гламура"
+intro_delay = 0.5
+spawn_interval = 0.45
+max_alive = 10
+enemy_def_path = "res://resources/enemies/fop.tres"
+count_base = 3
+count_per_player = 2

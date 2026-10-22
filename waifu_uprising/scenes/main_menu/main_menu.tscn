@@ -1,0 +1,166 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.055, 0.04, 0.1, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 46
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+theme_override_colors/font_outline_color = Color(0.6, 0.1, 0.45, 1)
+theme_override_constants/outline_size = 14
+text = "ПОСЛЕДНИЙ ИСТОЧНИК"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.75, 0.8, 1, 1)
+text = "WAIFU UPRISING — кооператив 1–8 игроков · Этап 1: Оборона источника"
+horizontal_alignment = 1
+
+[node name="ConnectPanel" type="PanelContainer" parent="Center/VBox"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center/VBox/ConnectPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Row1" type="HBoxContainer" parent="Center/VBox/ConnectPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameTitle" type="Label" parent="Center/VBox/ConnectPanel/VBox/Row1"]
+layout_mode = 2
+text = "Имя:"
+
+[node name="NameEdit" type="LineEdit" parent="Center/VBox/ConnectPanel/VBox/Row1"]
+layout_mode = 2
+custom_minimum_size = Vector2(220, 0)
+text = "Игрок"
+max_length = 20
+
+[node name="PortTitle" type="Label" parent="Center/VBox/ConnectPanel/VBox/Row1"]
+layout_mode = 2
+text = "Порт:"
+
+[node name="PortEdit" type="LineEdit" parent="Center/VBox/ConnectPanel/VBox/Row1"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "24560"
+
+[node name="Row2" type="HBoxContainer" parent="Center/VBox/ConnectPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HostButton" type="Button" parent="Center/VBox/ConnectPanel/VBox/Row2"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Создать комнату"
+
+[node name="IpTitle" type="Label" parent="Center/VBox/ConnectPanel/VBox/Row2"]
+layout_mode = 2
+text = "Адрес:"
+
+[node name="IpEdit" type="LineEdit" parent="Center/VBox/ConnectPanel/VBox/Row2"]
+layout_mode = 2
+custom_minimum_size = Vector2(170, 0)
+text = "127.0.0.1"
+
+[node name="JoinButton" type="Button" parent="Center/VBox/ConnectPanel/VBox/Row2"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Подключиться"
+
+[node name="StatusLabel" type="Label" parent="Center/VBox/ConnectPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.75, 0.78, 0.9, 1)
+text = "Создайте комнату или подключитесь к другу (UDP, порт по умолчанию 24560)."
+
+[node name="LobbyPanel" type="PanelContainer" parent="Center/VBox"]
+visible = false
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center/VBox/LobbyPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PlayersList" type="ItemList" parent="Center/VBox/LobbyPanel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(560, 150)
+
+[node name="Row" type="HBoxContainer" parent="Center/VBox/LobbyPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ClassTitle" type="Label" parent="Center/VBox/LobbyPanel/VBox/Row"]
+layout_mode = 2
+text = "Класс:"
+
+[node name="ClassOption" type="OptionButton" parent="Center/VBox/LobbyPanel/VBox/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+
+[node name="ReadyCheck" type="CheckButton" parent="Center/VBox/LobbyPanel/VBox/Row"]
+layout_mode = 2
+text = "Готов"
+
+[node name="StartButton" type="Button" parent="Center/VBox/LobbyPanel/VBox/Row"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Начать матч"
+
+[node name="HintLabel" type="Label" parent="Center/VBox/LobbyPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.65, 0.7, 0.85, 1)
+text = "Игроков: 1/8"
+
+[node name="QuitButton" type="Button" parent="Center/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Выйти из игры"
+
+[node name="VersionLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -30.0
+offset_right = 620.0
+offset_bottom = -10.0
+grow_vertical = 0
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.5, 0.52, 0.65, 1)
+text = "v0.1.0-stage1 · Godot 4.7.2 · ENet/UDP · server-authoritative"

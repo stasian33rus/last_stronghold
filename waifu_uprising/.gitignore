@@ -1,0 +1,11 @@
+# Godot 4
+.godot/
+*.translation
+export_presets.cfg
+export_credentials.cfg
+
+# Системное
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
