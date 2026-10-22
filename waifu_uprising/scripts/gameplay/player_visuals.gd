@@ -132,11 +132,13 @@ func _build_procedural(def: ClassDefinition) -> void:
 	torso.radius = 0.26 + 0.015 * form
 	torso.height = 0.95
 	_mesh(_root, torso, Vector3(0.0, 0.98, 0.0), Vector3.ZERO, outfit)
-	## Грудь — силуэт взрослеет с формой (в рамках художественного дизайна, ТЗ §7).
-	var bust := SphereMesh.new()
-	bust.radius = 0.13 + 0.035 * form
-	bust.height = bust.radius * 2.0
-	_mesh(_root, bust, Vector3(0.0, 1.14, -0.16 - 0.02 * form), Vector3.ZERO, outfit)
+	## Нагрудник — нейтральная равномерная деталь брони для всех форм.
+	## Визуальная прогрессия форм передаётся ТОЛЬКО экипировкой (акцентный
+	## материал со формы II), свечением, аурой и общим масштабом — силуэт
+	## остаётся стилизованным и неоткровенным (контентная безопасность).
+	var breastplate := BoxMesh.new()
+	breastplate.size = Vector3(0.34, 0.3, 0.08)
+	_mesh(_root, breastplate, Vector3(0.0, 1.12, -0.24), Vector3.ZERO, accent if form >= 1 else outfit)
 	## Юбка/броня-бедра.
 	var skirt := CylinderMesh.new()
 	skirt.top_radius = 0.24
