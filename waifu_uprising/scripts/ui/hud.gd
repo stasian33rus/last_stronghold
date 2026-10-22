@@ -41,6 +41,7 @@ var _local_prog: Dictionary = {}
 @onready var xp_fill: ColorRect = $BottomLeft/XpRow/XpBack/Fill
 @onready var coins_label: Label = $BottomLeft/XpRow/CoinsLabel
 @onready var buff_box: HBoxContainer = $BuffBox
+@onready var upgrades_label: Label = $UpgradesLabel
 @onready var toast_box: VBoxContainer = $ToastBox
 @onready var upgrade_panel: Control = $UpgradePanel
 @onready var offer_title: Label = $UpgradePanel/Center/OfferTitle
@@ -272,6 +273,7 @@ func _update_progression() -> void:
 	level_badge.text = "УР %d" % level
 	xp_fill.offset_right = xp_back.size.x * clampf(float(xp) / float(xp_need), 0.0, 1.0)
 	coins_label.text = "Монеты: %d" % int(payload.get("coins", 0))
+	_update_upgrades_list(payload)
 	if _pawn != null and is_instance_valid(_pawn):
 		local_name_label.text = "%s — %s · Ур. %d" % [_pawn.player_name, _display_class(_pawn.class_id), level]
 	_update_buffs(payload)
@@ -540,3 +542,23 @@ func _build_shop_items() -> void:
 		row.add_child(buy)
 		shop_items_box.add_child(row)
 		_shop_rows[def.id] = {"button": buy, "price_label": price_label}
+
+
+var _upgrades_hash: int = -1
+
+## Список взятых улучшений с уровнями (компактно, без перегрузки HUD).
+func _update_upgrades_list(payload: Dictionary) -> void:
+	var upgrades: Dictionary = payload.get("upgrades", {})
+	var h := upgrades.hash()
+	if h == _upgrades_hash:
+		return
+	_upgrades_hash = h
+	var parts: Array[String] = []
+	for id in upgrades.keys():
+		var def := Content.get_upgrade(id)
+		if def != null:
+			parts.append("%s×%d" % [def.display_name, int(upgrades[id])])
+	if parts.is_empty():
+		upgrades_label.text = ""
+	else:
+		upgrades_label.text = "Улучшения: " + " · ".join(parts)

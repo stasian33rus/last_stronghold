@@ -66,11 +66,16 @@ func _probe() -> void:
 	agent_node.add_child(agent)
 	await physics_frame
 	agent.target_position = Vector3(0, 0.2, -10)
-	await physics_frame
-	await physics_frame
-	var next1: Vector3 = agent.get_next_path_position()
+	## Карта навигации синхронизируется асинхронно — опрашиваем до 3 секунд.
+	var next1 := Vector3.ZERO
+	var detour := false
+	for _i in 180:
+		await physics_frame
+		next1 = agent.get_next_path_position()
+		if absf(next1.x) > 0.8:
+			detour = true
+			break
 	print("PROBE next_with_pillar=", next1)
-	var detour := absf(next1.x) > 0.8
 
 	## Re-bake после «разрушения» колонны (crate destroyed -> проход открыт)
 	pcol.set_deferred("disabled", true)
@@ -82,11 +87,15 @@ func _probe() -> void:
 	agent.target_position = Vector3.ZERO
 	await physics_frame
 	agent.target_position = Vector3(0, 0.2, -10)
-	await physics_frame
-	await physics_frame
-	var next2: Vector3 = agent.get_next_path_position()
+	var next2 := Vector3.ZERO
+	var rebake_ok := false
+	for _i in 180:
+		await physics_frame
+		next2 = agent.get_next_path_position()
+		if absf(next2.x) < 0.6 and next2.z < -4.0:
+			rebake_ok = true
+			break
 	print("PROBE next_after_rebake=", next2)
-	var rebake_ok := absf(next2.x) < 0.6 and next2.z < -4.0
 
 	## Запрос к недостижимой цели (за стеной) не должен ронять агента
 	agent.target_position = Vector3(0, 50.0, -500.0)

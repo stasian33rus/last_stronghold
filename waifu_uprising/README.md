@@ -3,7 +3,8 @@
 Кооперативный 3D action roguelite (1–8 игроков) на **Godot 4.7.2 stable** / GDScript (типизированный).
 Защитите Гигачада — последний источник энергии резонанса — от Ордена Гламура.
 
-Текущее состояние: **Этап 1 — вертикальный срез** (см. `docs/STAGE1_REPORT.md`).
+Текущее состояние: **Этап 2 — прогрессия, магазин, 4 архетипа врагов, NavMesh, разрушаемость**
+(отчёты: `docs/STAGE1_REPORT.md`, `docs/STAGE2_REPORT.md`).
 
 ## Быстрый старт
 
@@ -17,7 +18,7 @@ godot --headless --path . -- +dedicated +port=24560
 # Сетевой интеграционный тест (два headless-процесса, настоящий ENet/UDP):
 tests/run_net_test.sh 24560
 
-# Offline-дымотест игровой логики (27 проверок):
+# Offline-дымотест игровой логики Этапов 1-2 (120 проверок):
 godot --headless --path . res://tests/smoke_test.tscn
 ```
 
@@ -31,17 +32,18 @@ godot --headless --path . res://tests/smoke_test.tscn
 | Удар молотом | ЛКМ или J |
 | Рывок-уклонение (i-frames) | Shift или Space |
 | Зум камеры | Колесо мыши |
+| Выбор улучшения | 1 / 2 / 3 или мышь |
 | Выход в меню | Esc |
 
 ## Структура проекта
 
 ```
-scenes/      игровые сцены (меню, арена, персонаж, враг, Гигачад, HUD)
-scripts/     autoload/ (Net, Game, Classes, Sfx, Events), gameplay/, ai/,
+scenes/      игровые сцены (меню, арена, персонаж, 4 врага, снаряд, Гигачад, ящик, HUD)
+scripts/     autoload/ (Net, Game, Classes, Content, Sfx, Events), gameplay/, ai/,
              combat/, networking/, physics/, progression/, data/, ui/, levels/
-resources/   данные баланса: классы, враги, волны (.tres, типизированные Resource)
-tests/       smoke_test (offline-логика), autotest_runner (сетевая интеграция)
-docs/        архитектура, запуск, отчёты по этапам, GAME_DESIGN.md (ТЗ)
+resources/   данные баланса: классы, враги, волны, улучшения, магазин (.tres)
+tests/       smoke_test (offline-логика), autotest_runner (сеть), probe_nav, debug
+docs/        архитектура, запуск, отчёты по этапам, план, GAME_DESIGN.md (ТЗ)
 ```
 
 ## Принципы

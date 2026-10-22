@@ -31,11 +31,17 @@ var _bot_probe_pos := Vector3.ZERO
 var _bot_probe_t := 0.0
 var _bot_strafe_t := 0.0
 var _bot_strafe_sign := 1.0
+var _sys: ProgressionSystem
+var _mc: MatchController
+var _offer_choice: StringName = &""
+var _offer_delay := 0.0
+var _intermission_served := false
 
 func _ready() -> void:
 	mode = Game.autotest_mode
 	Game.autotest_started = true
 	Events.match_ended.connect(_on_match_ended)
+	Events.upgrade_offer_opened.connect(_on_offer_opened)
 	Net.connection_failed.connect(func(reason: String) -> void: _finish(false, "connection failed: %s" % reason))
 	match mode:
 		"host":
@@ -76,11 +82,42 @@ func _physics_process(delta: float) -> void:
 					_set_phase("match")
 		"match":
 			_drive_pawn(delta)
+			_handle_progression(delta)
 			_check_sync()
 
 func _set_phase(p: String) -> void:
 	_phase = p
 	_phase_t = 0.0
+
+## Боты используют progression/shop RPC: автовыбор улучшения, покупка, ready.
+func _handle_progression(delta: float) -> void:
+	if _sys == null or not is_instance_valid(_sys):
+		var ps := get_tree().get_nodes_in_group("progression_system")
+		_sys = ps[0] if ps.size() > 0 else null
+	if _mc == null or not is_instance_valid(_mc):
+		var mcs := get_tree().get_nodes_in_group("match_controller")
+		_mc = mcs[0] if mcs.size() > 0 else null
+	if _sys == null or _mc == null:
+		return
+	if _offer_delay > 0.0:
+		_offer_delay -= delta
+		if _offer_delay <= 0.0 and _offer_choice != &"":
+			var pick := _offer_choice
+			_offer_choice = &""
+			_sys.request_choose(pick)
+	if _mc.phase == MatchController.Phase.INTERMISSION:
+		if not _intermission_served:
+			_intermission_served = true
+			## Покупка (сервер отклонит, если не хватает монет — это тоже валидный путь)
+			_sys.request_buy(&"potion_small")
+			_sys.request_wave_ready(true)
+	elif _mc.phase == MatchController.Phase.FIGHT:
+		_intermission_served = false
+
+func _on_offer_opened(ids: Array, _deadline_msec: int) -> void:
+	if ids.size() > 0:
+		_offer_choice = ids[0]
+		_offer_delay = 0.5
 
 func _find_pawn() -> void:
 	for candidate in get_tree().get_nodes_in_group("player_pawns"):
@@ -204,6 +241,16 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 	if _match_done:
 		return
 	_match_done = true
+	## Дамп прогрессии для отчёта: уровень/улучшения/монеты (серверные данные).
+	if _sys != null and is_instance_valid(_sys):
+		for peer_id in _sys.states.keys():
+			var pst: ProgressionState = _sys.states[peer_id]
+			print("[AUTOTEST] progression peer %d: level=%d xp=%d coins=%d upgrades=%s buffs=%d" % [
+				peer_id, pst.level, pst.xp, pst.coins, str(pst.upgrade_levels), pst.buffs.size()])
+		if _sys.states.is_empty() and not _sys.local_state.is_empty():
+			var ls := _sys.local_state
+			print("[AUTOTEST] progression local mirror: level=%s xp=%s coins=%s upgrades=%s" % [
+				str(ls.get("level")), str(ls.get("xp")), str(ls.get("coins")), str(ls.get("upgrades"))])
 	if not victory:
 		_finish(false, "match ended in DEFEAT")
 		return
@@ -216,6 +263,13 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 		problems.append("world replication not observed on client")
 	if stats.is_empty():
 		problems.append("empty match stats")
+	if _sys != null and is_instance_valid(_sys):
+		for peer_id in _sys.states.keys():
+			var pst: ProgressionState = _sys.states[peer_id]
+			if pst.coins < 0:
+				problems.append("negative coins peer %d" % peer_id)
+			if pst.level < 1:
+				problems.append("invalid level peer %d" % peer_id)
 	if problems.is_empty():
 		_finish(true, "match victory verified (stats peers: %d, enemies seen: %d)" % [stats.size(), _enemies_seen])
 	else:

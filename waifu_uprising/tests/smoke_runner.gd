@@ -222,14 +222,19 @@ func _test_full_match_flow() -> void:
 	_check(not sys.try_buy(1, &"potion_small") and st.coins == coins_before,
 		"Покупка вне INTERMISSION отклонена, монеты не списаны")
 
-	## --- Враг атакует игрока (ИИ доходит до выпада).
+	## --- Враг атакует игрока (ИИ доходит до выпада) с наблюдаемым телеграфом.
 	pawn.external_input = null
 	if not _alive_enemies().is_empty():
 		foe = _alive_enemies()[0]
 	if is_instance_valid(foe) and not foe.health.is_dead:
 		foe.global_position = pawn.global_position + Vector3(1.6, 0.0, 0.0)
 		var pawn_hp_before := pawn.health.health
-		var pawn_hurt: bool = await _wait_until(func(): return pawn.health.health < pawn_hp_before or pawn.health.is_dead, 5.0)
+		var saw_windup := [false]
+		var pawn_hurt: bool = await _wait_until(func():
+			if is_instance_valid(foe) and foe.state == EnemyBase.State.WINDUP:
+				saw_windup[0] = true
+			return pawn.health.health < pawn_hp_before or pawn.health.is_dead, 5.0)
+		_check(saw_windup[0], "Телеграф атаки (WINDUP) наблюдался до удара")
 		_check(pawn_hurt,
 			"ИИ врага провёл выпад и нанёс урон игроку (%.0f -> %.0f)" % [pawn_hp_before, pawn.health.health])
 
@@ -354,8 +359,31 @@ func _test_full_match_flow() -> void:
 	_check(_waves_started_log == [1, 2, 3, 4], "Каждая волна стартовала ровно один раз: %s" % str(_waves_started_log))
 	var proj_clean: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").is_empty(), 4.0)
 	_check(proj_clean, "Снаряды удалены после завершения матча")
+	var foes_clean: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("enemy_units").is_empty(), 5.0)
+	_check(foes_clean, "Сущности врагов полностью удалены после матча (трупы очищены)")
 	var stats: Dictionary = mc.stats
 	_check(stats.has(1) and int(stats[1]["kills"]) >= 10, "Статистика убийств посчитана сервером (kills=%d)" % int(stats[1]["kills"]))
+
+	## Однократность награды за врага: дублирующее died-событие не даёт второй XP/монеты.
+	var sys_r := _prog()
+	var st_r: ProgressionState = sys_r.states.get(1, null)
+	var probe_enemy: EnemyBase = load("res://scenes/enemies/fop.tscn").instantiate()
+	probe_enemy.def = load("res://resources/enemies/fop.tres")
+	get_tree().current_scene.get_node(^"Entities").add_child(probe_enemy)
+	probe_enemy.position = Vector3(15.0, 0.5, 15.0)
+	probe_enemy.died_on_server.connect(sys_r._on_enemy_died_rewards)
+	sys_r._register_enemy(probe_enemy) ## учёт вклада урона, как у врагов из волны
+	await _frames(3)
+	st_r.xp = 0 ## гарантия: 20 XP не вызывают повышения уровня внутри проверки
+	var coins_r0 := st_r.coins
+	var kill_dmg := Units.make_damage(9999.0, _local_pawn(), 1, Vector3.FORWARD, 5.0, probe_enemy.global_position)
+	probe_enemy.health.take_damage(kill_dmg)
+	await _frames(3)
+	sys_r._on_enemy_died_rewards(probe_enemy, kill_dmg) ## дублирующее событие
+	await _frames(3)
+	_check(st_r.coins - coins_r0 == sys_r.balance.coins_kill and st_r.xp == sys_r.balance.xp_normal,
+		"Награда за врага ровно один раз (дубль события бессилен): +%d монет, %d XP" % [st_r.coins - coins_r0, st_r.xp])
+	probe_enemy.queue_free()
 
 	await _test_progression()
 
