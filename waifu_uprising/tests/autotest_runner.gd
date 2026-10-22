@@ -200,5 +200,6 @@ func _finish_async(passed: bool) -> void:
 	## Даём надёжным RPC (результат матча) долететь до второго пира,
 	## затем закрываем ENet и выходим.
 	await get_tree().create_timer(0.8).timeout
+	Sfx.shutdown()
 	Net.disconnect_game()
 	get_tree().quit(0 if passed else 1)

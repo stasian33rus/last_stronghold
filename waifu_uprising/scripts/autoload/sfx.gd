@@ -10,8 +10,10 @@ const POOL_SIZE: int = 10
 var _streams: Dictionary = {}
 var _pool: Array[AudioStreamPlayer] = []
 var _pool_index: int = 0
+var _headless: bool = false
 
 func _ready() -> void:
+	_headless = DisplayServer.get_name() == "headless"
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"
@@ -20,10 +22,12 @@ func _ready() -> void:
 	_build_sounds()
 	## При аварийном/тестовом quit() _exit_tree автозагрузок не вызывается —
 	## чистим аудио по сигналу tree_exiting корневого окна.
-	get_tree().root.tree_exiting.connect(_shutdown_audio)
+	get_tree().root.tree_exiting.connect(shutdown)
 
 ## Корректное освобождение аудио при завершении (без утечек ObjectDB на выходе).
-func _shutdown_audio() -> void:
+## ВАЖНО: при get_tree().quit() tree_exiting может не эмитироваться — вызывайте
+## shutdown() явно перед выходом (тесты, кнопка «Выйти»).
+func shutdown() -> void:
 	for p in _pool:
 		if is_instance_valid(p):
 			p.stop()
@@ -31,8 +35,8 @@ func _shutdown_audio() -> void:
 	_streams.clear()
 
 func play(what: String, volume_db: float = 0.0, pitch: float = 1.0) -> void:
-	if not _streams.has(what):
-		return
+	if _headless or not _streams.has(what):
+		return ## в headless не играем: тишина не нужна, а чистый выход тестов — да
 	var p := _pool[_pool_index]
 	_pool_index = (_pool_index + 1) % POOL_SIZE
 	p.stream = _streams[what]

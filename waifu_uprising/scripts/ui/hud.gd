@@ -44,6 +44,10 @@ func _ready() -> void:
 	var gigas := get_tree().get_nodes_in_group("gigachad")
 	_giga = gigas[0] if gigas.size() > 0 else null
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("menu_cancel"):
+		_on_menu()
+
 func _process(delta: float) -> void:
 	_find_local_pawn(delta)
 	_update_giga()

@@ -29,7 +29,9 @@ func _ready() -> void:
 	start_button.pressed.connect(_on_start)
 	ready_check.toggled.connect(_on_ready_toggled)
 	class_option.item_selected.connect(_on_class_selected)
-	quit_button.pressed.connect(func() -> void: get_tree().quit())
+	quit_button.pressed.connect(func() -> void:
+		Sfx.shutdown()
+		get_tree().quit())
 	Net.lobby_changed.connect(_refresh_lobby)
 	Net.connection_failed.connect(_on_connection_failed)
 	Net.connection_succeeded.connect(_on_connection_succeeded)

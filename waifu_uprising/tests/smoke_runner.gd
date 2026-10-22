@@ -8,6 +8,7 @@ extends Node
 
 var _failures: Array[String] = []
 var _checks: int = 0
+var _obj_baseline: int = 0
 
 func _ready() -> void:
 	_run.call_deferred()
@@ -22,6 +23,7 @@ func _run() -> void:
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
+	Sfx.shutdown()
 	get_tree().quit(1 if _failures.size() > 0 else 0)
 
 # ------------------------------------------------------------------ хелперы
@@ -121,6 +123,7 @@ func _test_match_victory_flow() -> void:
 	## Ждём окончания отсчёта и появления врагов.
 	var fight_on: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.FIGHT, 10.0)
 	_check(fight_on, "Фаза FIGHT после отсчёта")
+	_obj_baseline = int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	var spawned: bool = await _wait_until(func(): return not _alive_enemies().is_empty(), 15.0)
 	var enemies := _alive_enemies()
 	_check(spawned, "Волна заспавнила врагов (alive=%d)" % enemies.size())
@@ -175,6 +178,12 @@ func _test_match_victory_flow() -> void:
 	var stats: Dictionary = mc.stats
 	_check(stats.has(1) and int(stats[1]["kills"]) >= 1, "Статистика убийств посчитана сервером")
 
+	## Нет неограниченного роста объектов (ТЗ §20): после освобождения трупов
+	## и одноразовых эффектов число объектов возвращается к уровню до начала волны.
+	await _seconds(3.5)
+	var obj_after := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+	_check(obj_after <= _obj_baseline + 40,
+		"Объекты не накапливаются (%d до волны -> %d после, предел +%d)" % [_obj_baseline, obj_after, 40])
 ## Поражение по смерти Гигачада + падение/возрождение игрока.
 func _test_defeat_and_down_flow() -> void:
 	Game.start_offline_match(&"berserk", "Тестер-2")
