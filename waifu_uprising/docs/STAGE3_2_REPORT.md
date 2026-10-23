@@ -74,7 +74,7 @@ Armature modifier, вес 1.0) — простая и надёжная схема
 | 5 | Сетевой тест с двумя игроками | `tests/run_net_test.sh 24611`, `run_evolve_test.sh 24610` (хост-Берсерка + клиент-Валькирия с моделями) | **PASS×2 стороны, 0 script errors** — модели и эволюции согласованы |
 | 6 | Smoke + Берсерк не сломан | `godot --headless --path . res://tests/smoke_test.tscn` | **180/180 PASS, exit 0, 0 ERROR** (проверка «Берсерка процедурная, без .glb/AnimationPlayer» — PASS) |
 | 6b | Rematch / dedicated (регрессия) | `run_rematch_test.sh 24612`, `+dedicated +port=24613` | **PASS 2/2** / **PASS**, 0 script errors |
-| 7 | git diff и сканирование секретов | `git status/diff`, grep `github_pat` по репозиторию | чисто; **0 секретов** |
+| 7 | git diff и сканирование секретов | `git status/diff`, grep по репозиторию на шаблоны токенов (PAT/OAuth) | чисто; **0 секретов** |
 
 Дополнительно: превью-рендеры Blender Workbench (docs/previews/) подтверждают
 объёмную геометрию (не плоские изображения): силуэт героини с крыльями/оружием,
