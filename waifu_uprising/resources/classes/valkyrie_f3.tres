@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="ClassDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+[ext_resource type="PackedScene" path="res://models/valkyrie/valkyrie_f3.glb" id="4_mdl"]
 
 [resource]
 script = ExtResource("1_cls")
@@ -33,7 +34,7 @@ dodge_iframes = 0.34
 respawn_time = 5.0
 respawn_health_factor = 0.6
 xp_curve_base = 100.0
-model_scene = null
+model_scene = ExtResource("4_mdl")
 evolution_chain = Array[Resource]([])
 skill_dash_speed = 19.0
 skill_dash_duration = 0.3

@@ -86,6 +86,12 @@ godot --headless --path waifu_uprising res://tests/debug_giga.tscn
 godot --version   # ожидается 4.7.2.stable (или другая 4.7.x)
 ```
 
+Модели форм Валькирии лежат в `models/valkyrie/*.glb` (импортированы; превью —
+`docs/previews/`). Перегенерация/правка моделей (нужен Blender 4.5):
+`blender --background --python tools/gen_valkyrie_glb.py -- models/valkyrie`,
+затем `godot --headless --path . --import`. Назначение своих .glb другим
+классам/формам — поле `model_scene` ресурса формы в Godot Inspector.
+
 Проект не использует GDExtension/сторонние зависимости — только стандартный Godot 4.
 NavigationMesh печётся рантаймом на сервере — editor-bake и дополнительные
 инструменты не требуются.

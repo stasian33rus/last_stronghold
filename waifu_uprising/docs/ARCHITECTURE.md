@@ -302,3 +302,28 @@ RECOVER/HITSTUN/DEAD), движение «управление + knockback», а
   сбрасывается на каждую активацию — та же цель легально получает оба удара.
 - **Дальность ближней атаки**: `melee_range_scale` из данных формы множит
   масштаб hitbox-сферы вместе с `range_mult` улучшений (общий clamp 0.5–2.2).
+
+### 13.2. Модельный конвейер .glb (Этап 3.2)
+
+- Источник моделей — `tools/gen_valkyrie_glb.py` (Blender 4.5 headless):
+  процедурная генерация сетки/скелета/анимаций и экспорт GLB. Воспроизводимо:
+  `blender --background --python tools/gen_valkyrie_glb.py -- <outdir>`.
+- Общий скелет 24 кости (имена/иерархия одинаковы у всех форм): Hips→Spine→
+  Chest→{Head, Shoulder→UpperArm→LowerArm→Hand→Weapon[.L]}, Thigh→Shin→Foot,
+  Wing1→Wing2. Скиннинг жёсткий (vertex group + Armature modifier, вес 1.0).
+- 8 анимаций на форму (одинаковые тайминги): idle, run, attack, skill, parry,
+  hit, death, transform. Циклы idle/run помечаются LOOP_LINEAR рантаймом.
+- Узлы-точки: `WeaponPivot` (Empty у кости Weapon — совместимость с кодом
+  взмаха), `Aura` (нескинненный узел формы III: кольцо+кристаллы, вращается
+  кодом visuals — локальная косметика).
+- Интеграция: слот `ClassDefinition.model_scene` (PackedScene) → `PlayerVisuals.
+  rebuild()` инстанцирует модель вместо заглушки; `AnimationPlayer` управляется
+  состояниями FSM (RUN/IDLE/DOWN/SKILL) и one-shot RPC (play_swing→attack,
+  play_parry→parry, play_transform→transform на эволюции у сервера и клиента).
+  Fallback: `model_scene == null` или отсутствие AnimationPlayer — процедурная
+  заглушка и прежние твины (Берсерка не затронута).
+- Эхо-копии формы III: `VisualFx.phantom_slash` при наличии model_scene
+  инстанцирует полупрозрачный дубль модели с анимацией attack (группа
+  `phantom_fx`, TTL 0.42 с); иначе — примитивные силуэты.
+- Импорт: `.glb.import` коммитятся; проверка импорта — `godot --headless --path
+  . --import` + smoke-секция (8 анимаций/скелет/пивоты на каждую форму).

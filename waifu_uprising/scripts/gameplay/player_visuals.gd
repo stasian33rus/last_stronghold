@@ -21,8 +21,11 @@ var _swing_tween: Tween
 var _body_tween: Tween
 var _base_scale: Vector3 = Vector3.ONE
 var weapon_pivot: Node3D
-var _aura_ring: MeshInstance3D
+var _aura_ring: Node3D
 var _shards: Array[MeshInstance3D] = []
+## AnimationPlayer импортированной .glb-модели (null для процедурной заглушки).
+var _anim: AnimationPlayer
+var _oneshot_left: float = 0.0
 var _frenzy_on := false
 var _root: Node3D ## контейнер построенной модели (чтобы rebuild очищал только его)
 
@@ -48,6 +51,8 @@ func rebuild(def: ClassDefinition) -> void:
 	add_child(_root)
 	weapon_pivot = null
 	_aura_ring = null
+	_anim = null
+	_oneshot_left = 0.0
 	_shards.clear()
 	_materials.clear()
 	_orig_emissions.clear()
@@ -60,16 +65,38 @@ func rebuild(def: ClassDefinition) -> void:
 		model.name = "Model"
 		_root.add_child(model)
 		## Оружие-пивот для анимации взмаха: ищем точку в модели или создаём у руки.
-		var wp := model.get_node_or_null(^"WeaponPivot") as Node3D
+		var wp := model.find_child("WeaponPivot", true, false) as Node3D
 		if wp == null:
 			wp = Node3D.new()
 			wp.name = "WeaponPivot"
 			wp.position = Vector3(0.5, 1.0, -0.1)
 			_root.add_child(wp)
 		weapon_pivot = wp
+		## Управление анимациями glTF (idle/run/attack/skill/parry/hit/death/transform).
+		_anim = model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if _anim != null:
+			for loop_name in ["idle", "run"]:
+				if _anim.has_animation(loop_name):
+					_anim.get_animation(loop_name).loop_mode = Animation.LOOP_LINEAR
+			if _anim.has_animation("idle"):
+				_anim.play("idle")
+		_aura_ring = model.find_child("Aura", true, false)
 	else:
 		_build_procedural(def)
 	_collect_materials(_root)
+
+## Одноразовая анимация модели (атака/парирование/трансформация/рывок).
+func _play_oneshot(an: String) -> void:
+	if _anim == null or not _anim.has_animation(an):
+		return
+	_oneshot_left = _anim.get_animation(an).length
+	_anim.play(an)
+
+func play_parry() -> void:
+	_play_oneshot("parry")
+
+func play_transform() -> void:
+	_play_oneshot("transform")
 
 func _collect_materials(node: Node) -> void:
 	for child in node.get_children():
@@ -326,25 +353,29 @@ func _process(delta: float) -> void:
 	if st != _last_state:
 		_on_state_changed(_last_state, st)
 		_last_state = st
-	var hv := Vector2(pawn.velocity.x, pawn.velocity.z).length()
-	match st:
-		PlayerPawn.State.RUN:
-			_bob_time += delta * (6.0 + hv * 1.4)
-			_root.position.y = absf(sin(_bob_time)) * 0.07
-			_root.rotation.z = sin(_bob_time) * 0.05
-		PlayerPawn.State.IDLE:
-			_bob_time += delta * 2.0
-			_root.position.y = sin(_bob_time) * 0.02
-			_root.rotation.z = lerpf(_root.rotation.z, 0.0, delta * 8.0)
-		PlayerPawn.State.DODGE:
-			_root.position.y = 0.0
-			_root.rotation.z = lerpf(_root.rotation.z, 0.0, delta * 8.0)
-		_:
-			pass
-	## Аура финальной формы: вращение кольца и осколков.
+	_oneshot_left = maxf(0.0, _oneshot_left - delta)
+	## Модель с AnimationPlayer двигает тело сама — процедурный bob не нужен.
+	if _anim == null:
+		var hv := Vector2(pawn.velocity.x, pawn.velocity.z).length()
+		match st:
+			PlayerPawn.State.RUN:
+				_bob_time += delta * (6.0 + hv * 1.4)
+				_root.position.y = absf(sin(_bob_time)) * 0.07
+				_root.rotation.z = sin(_bob_time) * 0.05
+			PlayerPawn.State.IDLE:
+				_bob_time += delta * 2.0
+				_root.position.y = sin(_bob_time) * 0.02
+				_root.rotation.z = lerpf(_root.rotation.z, 0.0, delta * 8.0)
+			PlayerPawn.State.DODGE:
+				_root.position.y = 0.0
+				_root.rotation.z = lerpf(_root.rotation.z, 0.0, delta * 8.0)
+			_:
+				pass
+	else:
+		_bob_time += delta * 2.0
+	## Аура финальной формы: вращение кольца (узел Aura модели) и осколков заглушки.
 	if _aura_ring != null and is_instance_valid(_aura_ring):
 		_aura_ring.rotation.z += delta * 1.6
-		_aura_ring.position.y = 0.08 + sin(_bob_time * 0.8) * 0.03
 	for i in _shards.size():
 		var sh := _shards[i]
 		if is_instance_valid(sh):
@@ -352,6 +383,26 @@ func _process(delta: float) -> void:
 			sh.position.y = 1.35 + 0.15 * i + sin(_bob_time * 1.3 + i * 2.1) * 0.09
 
 func _on_state_changed(from: int, to: int) -> void:
+	## Переключение анимаций модели (glTF): циклы — по состоянию, one-shot —
+	## через play_swing/play_parry/play_transform и состояние SKILL.
+	if _anim != null:
+		match to:
+			PlayerPawn.State.RUN:
+				_oneshot_left = 0.0
+				if _anim.has_animation("run"):
+					_anim.play("run")
+			PlayerPawn.State.IDLE:
+				_oneshot_left = 0.0
+				if _anim.has_animation("idle"):
+					_anim.play("idle")
+			PlayerPawn.State.DOWN:
+				_oneshot_left = 0.0
+				if _anim.has_animation("death"):
+					_anim.play("death")
+			PlayerPawn.State.SKILL, PlayerPawn.State.DODGE:
+				_play_oneshot("skill")
+			_:
+				pass
 	match to:
 		PlayerPawn.State.DOWN:
 			_play_down()
@@ -364,6 +415,8 @@ func _play_down() -> void:
 		_body_tween.kill()
 	if _root == null:
 		return
+	if _anim != null and _anim.has_animation("death"):
+		return ## падение играет анимация death модели
 	_body_tween = create_tween()
 	_body_tween.tween_property(_root, "rotation:x", -PI / 2.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
@@ -372,6 +425,10 @@ func _play_respawn() -> void:
 		_body_tween.kill()
 	if _root == null:
 		return
+	if _anim != null:
+		if _anim.has_animation("idle"):
+			_anim.play("idle")
+		return ## модель не ронялась твином — только сброс one-shot
 	_root.rotation.x = 0.0
 	var target_scale := Vector3.ONE * (_def.visual_scale if _def != null else 1.0)
 	_body_tween = create_tween()
@@ -445,6 +502,9 @@ func play_parry_success() -> void:
 
 ## Замах оружия (вызывается fx_swing RPC на всех пирах).
 func play_swing() -> void:
+	if _anim != null:
+		_play_oneshot("attack")
+		return
 	if weapon_pivot == null or not is_instance_valid(weapon_pivot):
 		return
 	if _swing_tween != null and _swing_tween.is_valid():

@@ -261,6 +261,9 @@ func _apply_form(new_def: ClassDefinition) -> void:
 	refresh_effective_stats()
 	_update_name_label()
 	_rebuild_visuals()
+	## Короткая анимация трансформации (без кат-сцены, управление не теряется).
+	if visuals != null and visuals.has_method("play_transform"):
+		visuals.play_transform()
 	Events.unit_evolved.emit(self, form_index, new_def.display_name)
 	print("[PlayerPawn] ЭВОЛЮЦИЯ peer %d: %s -> форма %d «%s»" % [owner_peer, class_id, form_index + 1, new_def.display_name])
 	fx_evolve.rpc(new_def.display_name)
@@ -556,6 +559,8 @@ func try_parry() -> void:
 	_parry_cd_left = float(st["parry_cooldown"])
 	_parry_window_until_msec = Time.get_ticks_msec() + int(float(st["parry_window"]) * 1000.0)
 	fx_parry.rpc()
+	if visuals != null and visuals.has_method("play_parry"):
+		visuals.play_parry()
 
 func _parry_guard_active() -> bool:
 	return _parry_guard_until_msec > 0 and Time.get_ticks_msec() < _parry_guard_until_msec
@@ -870,6 +875,8 @@ func apply_sync_payload(payload: Dictionary) -> void:
 	var new_form := int(payload.get("f", form_index))
 	if new_form != form_index:
 		_set_form_replicated(new_form)
+		if visuals != null and visuals.has_method("play_transform"):
+			visuals.play_transform()
 
 ## Клиентская репликация формы: меняются ТОЛЬКО визуал и подпись (статы и бой
 ## считает сервер). Def формы резолвится из того же реестра, что и на сервере.

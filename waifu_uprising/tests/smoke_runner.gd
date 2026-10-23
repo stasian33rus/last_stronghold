@@ -207,7 +207,47 @@ func _test_data_layers() -> void:
 		holder.free()
 	_check(slots_ok == slots_total and slots_total == 24,
 		"24/24 визуальных слота: заглушка строится для каждой формы (%d/%d)" % [slots_ok, slots_total])
-	_check(null_model_ok, "Все 24 слота .glb по умолчанию пусты (model_scene=null)")
+	var with_model := 0
+	for cdef in Classes.get_all_defs():
+		if cdef.model_scene != null:
+			with_model += 1
+	var vk_models := 0
+	for cdef in Classes.get_form_chain(&"valkyrie"):
+		if cdef.model_scene != null:
+			vk_models += 1
+	_check(with_model == 3 and vk_models == 3,
+		"Слоты .glb: 3 подключены (вся цепочка Валькирии), 21 слот остальных классов пуст")
+	## --- Этап 3.2: настоящие .glb-модели трёх форм Валькирии (Blender, PBR, skin).
+	var need_anims := ["idle", "run", "attack", "skill", "parry", "hit", "death", "transform"]
+	var glb_ok := true
+	var glb_detail := ""
+	for f in ["valkyrie_f1", "valkyrie_f2", "valkyrie_f3"]:
+		var sc := load("res://models/valkyrie/%s.glb" % f) as PackedScene
+		if sc == null:
+			glb_ok = false
+			glb_detail = f + ":load fail"
+			break
+		var mroot := sc.instantiate()
+		add_child(mroot)
+		var ap := mroot.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		var skel := mroot.find_child("Skeleton3D", true, false) as Skeleton3D
+		var wp := mroot.find_child("WeaponPivot", true, false)
+		var missing := ""
+		if ap == null or skel == null or wp == null or skel.get_bone_count() < 20:
+			missing = "nodes/skeleton"
+		else:
+			for an in need_anims:
+				if not ap.has_animation(an):
+					missing = "anim:" + an
+					break
+		if missing == "" and f == "valkyrie_f3" and mroot.find_child("Aura", true, false) == null:
+			missing = "aura"
+		if missing != "":
+			glb_ok = false
+			glb_detail = f + ":" + missing
+		remove_child(mroot)
+		mroot.free()
+	_check(glb_ok, "3 формы Валькирии .glb: скин+скелет(24 кости)+8 анимаций+WeaponPivot/Aura [%s]" % glb_detail)
 	## Слот model_scene: внешняя модель заменяет заглушку без правки кода (путь Inspector).
 	var bdef := Classes.get_class_def(&"berserk")
 	var holder2 := Node3D.new()
@@ -545,6 +585,8 @@ func _test_evolution() -> void:
 		"Форма II: реальные статусы — урон 30, макс.HP 150 (модификаторы 1.0)")
 	var vis_root := pawn.visuals.get_node_or_null(^"ModelRoot")
 	_check(vis_root != null and vis_root.get_child_count() > 0, "Форма II: визуальная модель перестроена")
+	_check(pawn.visuals.get_node_or_null(^"ModelRoot/Model") == null and pawn.visuals.get("_anim") == null,
+		"Берсерка НЕ сломана: процедурная заглушка (без .glb и AnimationPlayer)")
 
 	## Уровень 5 → форма III «Абсолютная ярость».
 	sys.add_xp(777, 450)
@@ -687,6 +729,22 @@ func _test_valkyrie() -> void:
 	await _frames(4)
 	pawn.external_input = _vk_input()
 
+	## --- 0. Модель .glb подключена к слоту формы I и анимируется по состоянию.
+	var vmodel := pawn.visuals.get_node_or_null(^"ModelRoot/Model")
+	var vis_anim: AnimationPlayer = pawn.visuals.get("_anim")
+	_check(vmodel != null and vis_anim != null,
+		"Валькирия форма I: настоящая .glb-модель в слоте model_scene (заглушка отключена)")
+	await _frames(2)
+	_check(vis_anim != null and vis_anim.current_animation == "idle",
+		"Модель: анимация idle активна после спавна")
+	pawn.external_input = _vk_input(Vector2(0.0, -1.0))
+	await _frames(4)
+	var run_on: bool = vis_anim != null and vis_anim.current_animation == "run"
+	pawn.external_input = _vk_input()
+	await _frames(4)
+	_check(run_on and vis_anim != null and vis_anim.current_animation == "idle",
+		"Модель: переключение анимаций run/idle по состоянию пешки")
+
 	## --- 1. Рывок: перемещает, НЕ проходит сквозь стену (стена z=-22), cooldown.
 	pawn.global_position = Vector3(0.0, 0.2, -18.5)
 	pawn.rotation.y = 0.0
@@ -786,6 +844,11 @@ func _test_valkyrie() -> void:
 	await _frames(2)
 	_check(pawn.form_index == 1 and pawn.class_def.id == &"valkyrie_f2",
 		"Валькирия: серверная эволюция в форму II на уровне 3")
+	var m2 := pawn.visuals.get_node_or_null(^"ModelRoot/Model")
+	var vis_anim2: AnimationPlayer = pawn.visuals.get("_anim")
+	_check(m2 != null and vis_anim2 != null
+			and vis_anim2.current_animation == "transform",
+		"Форма II: модель заменена без пересоздания пешки, играет анимация трансформации")
 	_check(pawn.global_position.distance_to(pos_pre) < 0.1 and pawn._skill_cd_left > 1.5
 			and pawn.owner_peer == 778 and is_equal_approx(pawn.health.health, hp_pre + 20.0),
 		"Эволюция Валькирии сохраняет позицию/cooldown/peer, HP не сброшено (дельта максимума долечена)")
@@ -811,6 +874,8 @@ func _test_valkyrie() -> void:
 	await _frames(2)
 	_check(pawn.form_index == 2 and pawn.class_def.id == &"valkyrie_f3",
 		"Валькирия: форма III «Багровая богиня» на уровне 5")
+	_check(pawn.visuals.get("_aura_ring") != null,
+		"Форма III: узел ауры (кольцо+кристаллы) модели подключен и вращается visuals")
 
 	## 8a. Зеркальные копии: ровно 2 эхо-удара за взмах, без рекурсии.
 	var ph := _spawn_probe_enemy("res://scenes/enemies/brute.tscn", "res://resources/enemies/brute.tres",
@@ -820,7 +885,15 @@ func _test_valkyrie() -> void:
 	pawn._attack_cd_left = 0.0
 	pawn.state = PlayerPawn.State.IDLE
 	pawn.try_attack()
-	await _seconds(1.0)
+	await _seconds(0.35)
+	var ghosts := get_tree().get_nodes_in_group("phantom_fx")
+	var ghost_anim := false
+	for g in ghosts:
+		if g.find_child("AnimationPlayer", true, false) != null:
+			ghost_anim = true
+	_check(ghosts.size() > 0 and ghost_anim,
+		"Эхо-удары: зеркальные копии отрисованы моделью формы III с анимацией атаки")
+	await _seconds(0.75)
 	## Ожидание: 29 (осн.) + 29 (доп. удар) + 2×14.5 (копии) = 87.
 	_check(is_equal_approx(180.0 - ph.health.health, 29.0 * 2.0 + 29.0 * 0.5 * 2.0),
 		"Форма III: взмах + доп. удар + РОВНО 2 эха копий (87 урона), факт %.1f" % (180.0 - ph.health.health))

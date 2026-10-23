@@ -39,6 +39,27 @@ static func phantom_slash(unit: Node, color: Color) -> void:
 	var n3 := unit as Node3D
 	if n3 == null:
 		return
+	## Если у формы есть настоящая .glb-модель — призрак строится из неё
+	## (полупрозрачный силуэт, проигрывает атаку): копии «повторяют» движение.
+	var model_scene: PackedScene = null
+	var pawn := unit as PlayerPawn
+	if pawn != null and pawn.class_def != null:
+		model_scene = pawn.class_def.model_scene
+	if model_scene != null:
+		for i in 2:
+			var ghost := model_scene.instantiate()
+			ghost.add_to_group("phantom_fx")
+			tree.current_scene.add_child(ghost)
+			_ghostify(ghost, color)
+			ghost.global_position = n3.global_position + Vector3(0.7 - 1.4 * float(i), 0.0, 0.4)
+			ghost.rotation.y = n3.rotation.y
+			var ap := ghost.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			if ap != null and ap.has_animation("attack"):
+				ap.play("attack")
+			var tween := tree.create_tween()
+			tween.tween_interval(0.42)
+			tween.tween_callback(ghost.queue_free)
+		return
 	for i in 2:
 		var ghost := Node3D.new()
 		ghost.add_to_group("phantom_fx")
@@ -71,6 +92,22 @@ static func phantom_slash(unit: Node, color: Color) -> void:
 		tween.tween_property(ghost, "rotation:y", ghost.rotation.y + (2.2 if i == 0 else -2.2), 0.3)
 		tween.tween_property(mat, "albedo_color:a", 0.0, 0.42).set_delay(0.08)
 		tween.chain().tween_callback(ghost.queue_free)
+
+## Полупрозрачный багровый силуэт: все материалы дублируются и переводятся
+## в alpha-blend с эмиссией (исходные материалы модели не мутируются).
+static func _ghostify(node: Node, color: Color) -> void:
+	for child in node.get_children():
+		var mi := child as MeshInstance3D
+		if mi != null:
+			var src := mi.material_override if mi.material_override != null else mi.get_active_material(0)
+			var gm := (src.duplicate() if src != null else StandardMaterial3D.new()) as StandardMaterial3D
+			gm.albedo_color = Color(color.r, color.g, color.b, 0.3)
+			gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			gm.emission_enabled = true
+			gm.emission = color
+			gm.emission_energy_multiplier = 1.2
+			mi.material_override = gm
+		_ghostify(child, color)
 
 static func ring_burst(world_pos: Vector3, color: Color, radius: float = 8.0) -> void:
 	var tree := Engine.get_main_loop() as SceneTree
