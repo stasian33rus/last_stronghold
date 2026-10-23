@@ -458,8 +458,9 @@ FORMS = {
         hair=(0.82, 0.85, 0.93), hair_metal=0.25, hair_rough=0.38,
         feather=(0.95, 0.96, 1.0), feather_em=None,
         steel=(0.76, 0.79, 0.86), cape=None, aura=None,
-        weapon="spear", wingscale=1.0, crown="none", braids=False,
-        glow_trim=0.0,
+        weapon="spear", wingscale=1.12, crown="none", braids=False,
+        glow_trim=0.35, wings=True, horns=False, bulk=1.0,
+        out="valkyrie/valkyrie_f1.glb",
     ),
     "valkyrie_f2": dict(
         file="valkyrie_f2.glb", label="Форма II «Клинковый танец»",
@@ -469,8 +470,9 @@ FORMS = {
         hair=(0.80, 0.84, 0.95), hair_metal=0.25, hair_rough=0.36,
         feather=(0.92, 0.94, 1.0), feather_em=(0.35, 0.45, 0.9),
         steel=(0.80, 0.83, 0.90), cape=None, aura=None,
-        weapon="dual", wingscale=1.08, crown="circlet", braids=True,
-        glow_trim=0.6,
+        weapon="dual", wingscale=1.2, crown="circlet", braids=True,
+        glow_trim=0.8, wings=True, horns=False, bulk=1.0,
+        out="valkyrie/valkyrie_f2.glb",
     ),
     "valkyrie_f3": dict(
         file="valkyrie_f3.glb", label="Форма III «Багровая богиня»",
@@ -480,8 +482,46 @@ FORMS = {
         hair=(0.90, 0.90, 0.96), hair_metal=0.3, hair_rough=0.32,
         feather=(0.72, 0.10, 0.20), feather_em=(0.9, 0.12, 0.2),
         steel=(0.85, 0.70, 0.55), cape=(0.55, 0.06, 0.14), aura=(1.0, 0.16, 0.22),
-        weapon="dual", wingscale=1.28, crown="crown", braids=False,
-        glow_trim=1.4,
+        weapon="dual", wingscale=1.4, crown="crown", braids=False,
+        glow_trim=1.7, wings=True, horns=False, bulk=1.0,
+        out="valkyrie/valkyrie_f3.glb",
+    ),
+    # ---------------- Берсерк (канон §6.6): массивный силуэт, огромный молот ----------------
+    "berserk_f1": dict(
+        file="berserk_f1.glb", label="Берсерка, форма I",
+        armor=(0.72, 0.12, 0.30), armor_metal=0.4, armor_rough=0.4,
+        trim=(0.95, 0.75, 0.3), trim_metal=0.9, trim_rough=0.25,
+        suit=(0.18, 0.12, 0.16), skin=(1.0, 0.86, 0.76),
+        hair=(0.95, 0.2, 0.45), hair_metal=0.2, hair_rough=0.4,
+        feather=(1, 1, 1), feather_em=None,
+        steel=(0.55, 0.56, 0.62), cape=None, aura=None,
+        weapon="hammer", wingscale=1.0, crown="none", braids=False,
+        glow_trim=0.3, wings=False, horns=True, bulk=1.18,
+        out="berserk/berserk_f1.glb",
+    ),
+    "berserk_f2": dict(
+        file="berserk_f2.glb", label="Берсерка, форма II «Волна ярости»",
+        armor=(0.62, 0.08, 0.22), armor_metal=0.5, armor_rough=0.35,
+        trim=(1.0, 0.8, 0.3), trim_metal=0.95, trim_rough=0.2,
+        suit=(0.16, 0.10, 0.14), skin=(1.0, 0.86, 0.76),
+        hair=(0.98, 0.25, 0.5), hair_metal=0.25, hair_rough=0.36,
+        feather=(1, 1, 1), feather_em=None,
+        steel=(0.6, 0.58, 0.64), cape=None, aura=None,
+        weapon="hammer", wingscale=1.0, crown="none", braids=False,
+        glow_trim=0.9, wings=False, horns=True, bulk=1.24,
+        out="berserk/berserk_f2.glb",
+    ),
+    "berserk_f3": dict(
+        file="berserk_f3.glb", label="Берсерка, форма III «Абсолютная ярость»",
+        armor=(0.5, 0.05, 0.12), armor_metal=0.55, armor_rough=0.3,
+        trim=(1.0, 0.72, 0.25), trim_metal=0.95, trim_rough=0.18,
+        suit=(0.14, 0.08, 0.10), skin=(1.0, 0.86, 0.76),
+        hair=(1.0, 0.3, 0.55), hair_metal=0.3, hair_rough=0.32,
+        feather=(1, 1, 1), feather_em=None,
+        steel=(0.65, 0.5, 0.45), cape=(0.4, 0.04, 0.1), aura=(1.0, 0.35, 0.12),
+        weapon="hammer", wingscale=1.0, crown="crown", braids=False,
+        glow_trim=1.6, wings=False, horns=True, bulk=1.3,
+        out="berserk/berserk_f3.glb",
     ),
 }
 
@@ -512,16 +552,17 @@ def build_form(key, cfg):
         return obj
 
     # ---- торс: закрытый крой, акцент — тонкая талия и нагрудник
-    P(sphere(key + "_chestplate", 0.185, (0, -0.012, 1.34), mat=armor, coll=coll, sx=1.06, sy=0.82, sz=1.0), "Chest")
+    bk = cfg.get("bulk", 1.0)
+    P(sphere(key + "_chestplate", 0.185 * bk, (0, -0.012, 1.34), mat=armor, coll=coll, sx=1.06, sy=0.82, sz=1.0), "Chest")
     P(sphere(key + "_bustL", 0.075, (0.062, -0.10, 1.375), mat=armor, coll=coll, sx=1.0, sy=0.75, sz=0.9), "Chest")
     P(sphere(key + "_bustR", 0.075, (-0.062, -0.10, 1.375), mat=armor, coll=coll, sx=1.0, sy=0.75, sz=0.9), "Chest")
-    P(torus(key + "_collar", 0.115, 0.022, (0, 0, 1.455), rot=(90, 0, 0), mat=trim, coll=coll), "Chest")
-    P(cyl(key + "_abdomen", 0.115, 0.135, 0.22, (0, 0, 1.185), mat=suit, coll=coll), "Spine")
-    P(torus(key + "_belt", 0.135, 0.028, (0, 0, 1.075), rot=(90, 0, 0), mat=trim, coll=coll), "Hips")
+    P(torus(key + "_collar", 0.115, 0.022, (0, 0, 1.455), mat=trim, coll=coll), "Chest")
+    P(cyl(key + "_abdomen", 0.115 * bk, 0.135 * bk, 0.22, (0, 0, 1.185), mat=suit, coll=coll), "Spine")
+    P(torus(key + "_belt", 0.135, 0.028, (0, 0, 1.075), mat=trim, coll=coll), "Hips")
     P(cyl(key + "_pelvis", 0.15, 0.135, 0.16, (0, 0, 0.985), mat=suit, coll=coll), "Hips")
     # юбка-фолд: закрытая, до середины бедра, с золотой каймой
     P(cyl(key + "_fauld", 0.185, 0.245, 0.30, (0, 0, 0.80), mat=armor, coll=coll, seg=14), "Hips")
-    P(torus(key + "_fauld_trim", 0.245, 0.016, (0, 0, 0.655), rot=(90, 0, 0), mat=trim, coll=coll), "Hips")
+    P(torus(key + "_fauld_trim", 0.245, 0.016, (0, 0, 0.655), mat=trim, coll=coll), "Hips")
     P(box(key + "_fauld_front", 0.12, 0.02, 0.26, (0, -0.20, 0.78), rot=(6, 0, 0), mat=trim, coll=coll, taper=0.8), "Hips")
 
     # ---- голова/лицо/волосы
@@ -537,10 +578,13 @@ def build_form(key, cfg):
         P(cyl(key + "_braidR", 0.03, 0.018, 0.34, (-0.085, 0.06, 1.36), rot=(12, 0, -14), mat=hair, coll=coll), "Head")
         P(sphere(key + "_ribbonL", 0.028, (0.10, 0.075, 1.50), mat=trim, coll=coll), "Head")
         P(sphere(key + "_ribbonR", 0.028, (-0.10, 0.075, 1.50), mat=trim, coll=coll), "Head")
+    if cfg.get("horns", False):
+        P(cyl(key + "_hornL", 0.028, 0.006, 0.22, (0.085, 0.02, 1.68), rot=(-20, 0, 35), mat=trim, coll=coll), "Head")
+        P(cyl(key + "_hornR", 0.028, 0.006, 0.22, (-0.085, 0.02, 1.68), rot=(-20, 0, -35), mat=trim, coll=coll), "Head")
     if cfg["crown"] == "circlet":
-        P(torus(key + "_circlet", 0.10, 0.012, (0, 0, 1.635), rot=(84, 0, 0), mat=trim, coll=coll), "Head")
+        P(torus(key + "_circlet", 0.10, 0.012, (0, 0, 1.635), mat=trim, coll=coll), "Head")
     elif cfg["crown"] == "crown":
-        P(torus(key + "_crownbase", 0.105, 0.016, (0, 0, 1.645), rot=(84, 0, 0), mat=trim, coll=coll), "Head")
+        P(torus(key + "_crownbase", 0.105, 0.016, (0, 0, 1.645), mat=trim, coll=coll), "Head")
         for ang, hgt in [(0, 0.09), (55, 0.065), (-55, 0.065), (115, 0.05), (-115, 0.05)]:
             ax = 0.105 * math.cos(R(ang + 90))
             ay = -0.105 * math.sin(R(ang + 90))
@@ -550,21 +594,21 @@ def build_form(key, cfg):
     # ---- руки: плечи-наплечники (золото у II/III), кожа рук, наручи
     for side in ("L", "R"):
         sx = 1 if side == "L" else -1
-        pad_scale = 1.0 if cfg["weapon"] == "spear" else 1.12
-        P(sphere(key + "_pauld" + side, 0.085 * pad_scale, (sx * 0.205, 0, 1.435), mat=armor, coll=coll, sx=1.1, sy=1.0, sz=0.85), "Shoulder." + side)
-        P(torus(key + "_pauldrim" + side, 0.075 * pad_scale, 0.014, (sx * 0.205, 0, 1.40), rot=(90, 0, 0), mat=trim, coll=coll), "Shoulder." + side)
-        P(sphere(key + "_upperarm" + side, 0.052, (sx * 0.205, 0.005, 1.27), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=2.8), "UpperArm." + side)
-        P(sphere(key + "_forearm" + side, 0.045, (sx * 0.22, 0.02, 1.02), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=3.0), "LowerArm." + side)
+        pad_scale = (1.0 if cfg["weapon"] == "spear" else 1.12) * bk
+        P(sphere(key + "_pauld" + side, 0.085 * pad_scale, (sx * 0.205 * bk, 0, 1.435), mat=armor, coll=coll, sx=1.1, sy=1.0, sz=0.85), "Shoulder." + side)
+        P(torus(key + "_pauldrim" + side, 0.075 * pad_scale, 0.014, (sx * 0.205, 0, 1.40), mat=trim, coll=coll), "Shoulder." + side)
+        P(sphere(key + "_upperarm" + side, 0.052 * bk, (sx * 0.205, 0.005, 1.27), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=2.8), "UpperArm." + side)
+        P(sphere(key + "_forearm" + side, 0.045 * bk, (sx * 0.22, 0.02, 1.02), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=3.0), "LowerArm." + side)
         P(cyl(key + "_vambrace" + side, 0.052, 0.048, 0.14, (sx * 0.222, 0.026, 0.985), mat=armor, coll=coll), "LowerArm." + side)
         P(sphere(key + "_hand" + side, 0.042, (sx * 0.228, 0.035, 0.855), mat=skin, coll=coll, sz=1.2), "Hand." + side)
 
     # ---- ноги: бёдра (кожа), поножи, сапоги — «акцент на ноги», всё закрыто
     for side in ("L", "R"):
         sx = 1 if side == "L" else -1
-        P(sphere(key + "_thigh" + side, 0.062, (sx * 0.10, 0.005, 0.73), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=2.9), "Thigh." + side)
+        P(sphere(key + "_thigh" + side, 0.062 * bk, (sx * 0.10, 0.005, 0.73), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=2.9), "Thigh." + side)
         P(sphere(key + "_shin" + side, 0.05, (sx * 0.105, 0.015, 0.34), mat=skin, coll=coll, sx=1.0, sy=1.0, sz=3.8), "Shin." + side)
         P(cyl(key + "_greave" + side, 0.058, 0.05, 0.28, (sx * 0.105, -0.005, 0.36), mat=armor, coll=coll), "Shin." + side)
-        P(torus(key + "_knee" + side, 0.05, 0.014, (sx * 0.105, 0.0, 0.51), rot=(90, 0, 0), mat=trim, coll=coll), "Shin." + side)
+        P(torus(key + "_knee" + side, 0.05, 0.014, (sx * 0.105, 0.0, 0.51), mat=trim, coll=coll), "Shin." + side)
         P(box(key + "_boot" + side, 0.078, 0.135, 0.14, (sx * 0.105, -0.02, 0.11), mat=armor, coll=coll), "Foot." + side)
         P(box(key + "_toecap" + side, 0.072, 0.055, 0.05, (sx * 0.105, -0.11, 0.065), mat=trim, coll=coll), "Foot." + side)
 
@@ -579,8 +623,10 @@ def build_form(key, cfg):
         eul = d.to_track_quat("Z", "Y").to_euler()
         rot = tuple(math.degrees(a) for a in eul)
         return P(box(name, w, t, half_len * 2.0, tuple(mid), rot=rot, mat=m, coll=coll, taper=0.5), bname)
-    for side in ("L", "R"):
+    for side in ("L", "R") if cfg.get("wings", True) else ():
         sx = 1 if side == "L" else -1
+        if not cfg.get("wings", True):
+            break
         _bone_box("Wing1." + side, 0.19, 0.045, 0.035, key + "_wingarm1" + side, armor)
         _bone_box("Wing2." + side, 0.17, 0.032, 0.026, key + "_wingarm2" + side, armor)
         from mathutils import Vector as _V
@@ -610,9 +656,17 @@ def build_form(key, cfg):
     if cfg["weapon"] == "spear":
         P(cyl(key + "_spear_shaft", 0.016, 0.014, 1.75, (-0.235, 0.045, 1.30), mat=steel, coll=coll), "Weapon")
         P(octa(key + "_spear_head", 0.045, 0.16, (-0.235, 0.045, 2.28), mat=trim, coll=coll), "Weapon")
-        P(torus(key + "_spear_ring", 0.03, 0.010, (-0.235, 0.045, 2.08), rot=(90, 0, 0), mat=trim, coll=coll), "Weapon")
+        P(torus(key + "_spear_ring", 0.03, 0.010, (-0.235, 0.045, 2.08), mat=trim, coll=coll), "Weapon")
         P(box(key + "_spear_finL", 0.012, 0.05, 0.16, (-0.27, 0.045, 2.14), rot=(0, 0, 24), mat=steel, coll=coll), "Weapon")
         P(box(key + "_spear_finR", 0.012, 0.05, 0.16, (-0.20, 0.045, 2.14), rot=(0, 0, -24), mat=steel, coll=coll), "Weapon")
+    elif cfg["weapon"] == "hammer":
+        P(cyl(key + "_ham_shaft", 0.035, 0.03, 1.25, (-0.235, 0.045, 1.15), mat=steel, coll=coll), "Weapon")
+        P(box(key + "_ham_head", 0.34, 0.30, 0.42, (-0.235, 0.045, 1.82), mat=steel, coll=coll), "Weapon")
+        P(box(key + "_ham_band", 0.36, 0.10, 0.44, (-0.235, 0.045, 1.82), mat=trim, coll=coll), "Weapon")
+        P(octa(key + "_ham_spike", 0.05, 0.14, (-0.235, 0.045, 2.10), mat=trim, coll=coll), "Weapon")
+        if cfg.get("glow_trim", 0.0) >= 1.0:
+            P(octa(key + "_ham_crackL", 0.03, 0.16, (-0.41, 0.045, 1.82), rot=(0, 90, 0), mat=trim, coll=coll), "Weapon")
+            P(octa(key + "_ham_crackR", 0.03, 0.16, (-0.06, 0.045, 1.82), rot=(0, 90, 0), mat=trim, coll=coll), "Weapon")
     else:
         for bone, sgn, nm in [("Weapon", -1, "R"), ("Weapon.L", 1, "L")]:
             P(box(key + "_blade_" + nm, 0.030, 0.012, 0.82, (sgn * 0.235, 0.045, 1.24), mat=steel, coll=coll, taper=0.25), bone)
@@ -628,7 +682,7 @@ def build_form(key, cfg):
         aura_empty.empty_display_size = 0.3
         aura_empty.location = (0, 0, 0.045)
         coll.objects.link(aura_empty)
-        ring = torus(key + "_auraring", 0.72, 0.045, (0, 0, 0), rot=(90, 0, 0), mat=aura_m, coll=coll, majseg=28, minseg=8)
+        ring = torus(key + "_auraring", 0.72, 0.045, (0, 0, 0), mat=aura_m, coll=coll, majseg=28, minseg=8)
         ring.parent = aura_empty
         parts.append(ring)
         for i in range(5):
@@ -673,7 +727,8 @@ def build_form(key, cfg):
         ob.select_set(True)
     arm.select_set(True)
     bpy.context.view_layer.objects.active = arm
-    out = os.path.join(OUT_DIR, cfg["file"])
+    out = os.path.join(OUT_DIR, cfg.get("out", cfg["file"]))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=out,
         export_format="GLB",
@@ -711,7 +766,8 @@ def cleanup_form():
 def main():
     bpy.context.scene.render.fps = FPS
     stats = []
-    for key in ("valkyrie_f1", "valkyrie_f2", "valkyrie_f3"):
+    for key in ("valkyrie_f1", "valkyrie_f2", "valkyrie_f3",
+                "berserk_f1", "berserk_f2", "berserk_f3"):
         cleanup_form()
         stats.append(build_form(key, FORMS[key]))
     print("[GEN] ГОТОВО: %d моделей в %s" % (len(stats), OUT_DIR))

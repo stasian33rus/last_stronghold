@@ -12,6 +12,7 @@
 4. Управление: WASD — движение, мышь — прицел, ЛКМ/J — атака,
    Shift/Space — рывок-уклонение, колесо — зум камеры, Esc — выход в меню,
    **1/2/3 или мышь — выбор улучшения** при повышении уровня.
+   **F3 — техническая диагностика (FPS/рендерер/драйвер), скрыта по умолчанию.**
    Умения класса: **E/ПКМ — активное умение** (Валькирия: рывок с круговым
    ударом), **F — парирование** (Валькирия: окно блока, усиление и контратака).
 5. Классы в лобби: **Берсерка** (молот, ударные волны ярости) и **Валькирия**
@@ -72,6 +73,13 @@ waifu_uprising/tests/run_evolve_test.sh 24592 /путь/к/godot
 # Dedicated-сервер + один клиент (вручную):
 godot --headless --path waifu_uprising -- +dedicated +port=24590 +fast=1 &
 godot --headless --path waifu_uprising -- +autotest=client +ip=127.0.0.1 +port=24590 +fast=1
+
+# Визуальная витрина: скриншоты из Godot (11 кадров: линейка форм, крупные
+# планы, бой, умение, парирование, трансформация). Требует X/virtual display
+# и software GL (xvfb + llvmpipe); на машине с GPU работает без обёртки:
+xvfb-run -a godot --rendering-driver opengl3 --rendering-method gl_compatibility \
+  --resolution 800x450 --path waifu_uprising res://tests/visual_showcase.tscn \
+  -- +shotdir=$PWD/waifu_uprising/docs/screenshots
 
 # Probe навигации (bake/agent/rebake API NavigationServer3D):
 godot --headless --path waifu_uprising -s res://tests/probe_nav.gd

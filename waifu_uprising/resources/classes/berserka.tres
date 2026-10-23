@@ -1,8 +1,9 @@
-[gd_resource type="Resource" script_class="ClassDefinition" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
 [ext_resource type="Resource" path="res://resources/classes/berserk_f2.tres" id="2_f2"]
 [ext_resource type="Resource" path="res://resources/classes/berserk_f3.tres" id="3_f3"]
+[ext_resource type="PackedScene" path="res://models/berserk/berserk_f1.glb" id="4_mdl"]
 
 [resource]
 script = ExtResource("1_cls")
@@ -36,7 +37,7 @@ respawn_time = 5.0
 respawn_health_factor = 0.6
 xp_curve_base = 100.0
 evolution_chain = Array[Resource]([ExtResource("2_f2"), ExtResource("3_f3")])
-model_scene = null
+model_scene = ExtResource("4_mdl")
 visual_weapon = 1
 visual_hair = 1
 visual_hair_color = Color(0.95, 0.2, 0.45, 1.0)

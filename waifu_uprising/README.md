@@ -9,10 +9,12 @@ E/ПКМ, парирование F с контратакой, форма II — 
 форма III «Багровая богиня» — зеркальные копии и цепные удары). Архитектура
 8 классов × 3 формы (24 ресурса, 24 слота под .glb). Этапы 1–2 верифицированы.
 Остальные 6 классов — данные+визуал в очереди (`docs/CLASS_MATRIX.md`).
-Этап 3.2: настоящие .glb-модели трёх форм Валькирии (общий скелет, 8 анимаций,
-PBR; `models/valkyrie/`, превью `docs/previews/`).
+Этапы 3.2–3.3: настоящие .glb-модели форм Валькирии И Берсерки (общий скелет,
+8 анимаций, PBR; `models/*/`), визуальная ревизия: камера ~42°, декор арены,
+debug-оверлей по F3; скриншоты из Godot — `docs/screenshots/`.
 Отчёты: `docs/STAGE1_REPORT.md`, `docs/STAGE2_REPORT.md`, `docs/STATE_AUDIT.md`,
-`docs/STAGE3_REPORT.md`, `docs/STAGE3_1_REPORT.md`, `docs/STAGE3_2_REPORT.md`.
+`docs/STAGE3_REPORT.md`, `docs/STAGE3_1_REPORT.md`, `docs/STAGE3_2_REPORT.md`,
+`docs/STAGE3_3_REPORT.md`.
 
 ## Быстрый старт
 

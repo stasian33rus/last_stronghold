@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="ClassDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="ClassDefinition" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
+[ext_resource type="PackedScene" path="res://models/berserk/berserk_f2.glb" id="4_mdl"]
 
 [resource]
 script = ExtResource("1_cls")
@@ -38,7 +39,7 @@ shockwave_every_n_hits = 3
 shockwave_radius = 4.5
 shockwave_damage_mult = 0.5
 shockwave_knockback = 10.0
-model_scene = null
+model_scene = ExtResource("4_mdl")
 visual_weapon = 1
 visual_hair = 1
 visual_hair_color = Color(0.95, 0.2, 0.45, 1.0)

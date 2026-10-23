@@ -9,3 +9,6 @@ export_credentials.cfg
 Thumbs.db
 *.tmp
 *.log
+
+# Скриншоты-артефакты витрины (импорт-сайдкары не коммитим)
+docs/screenshots/*.import

@@ -202,7 +202,7 @@ func _build_procedural(def: ClassDefinition) -> void:
 		var ring_mesh := TorusMesh.new()
 		ring_mesh.inner_radius = 0.75
 		ring_mesh.outer_radius = 0.86
-		_aura_ring = _mesh(_root, ring_mesh, Vector3(0.0, 0.08, 0.0), Vector3(90.0, 0.0, 0.0), accent)
+		_aura_ring = _mesh(_root, ring_mesh, Vector3(0.0, 0.08, 0.0), Vector3.ZERO, accent)
 		var shard := BoxMesh.new()
 		shard.size = Vector3(0.1, 0.22, 0.1)
 		for i in 3:
@@ -375,7 +375,9 @@ func _process(delta: float) -> void:
 		_bob_time += delta * 2.0
 	## Аура финальной формы: вращение кольца (узел Aura модели) и осколков заглушки.
 	if _aura_ring != null and is_instance_valid(_aura_ring):
-		_aura_ring.rotation.z += delta * 1.6
+		## Кольцо ауры лежит в горизонтальной плоскости — вращаем вокруг
+		## вертикальной оси Y (и для узла Aura из .glb, и для процедурного).
+		_aura_ring.rotation.y += delta * 1.6
 	for i in _shards.size():
 		var sh := _shards[i]
 		if is_instance_valid(sh):

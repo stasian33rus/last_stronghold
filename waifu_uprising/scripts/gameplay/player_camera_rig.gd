@@ -5,9 +5,12 @@ extends Node3D
 ## top_level: позиция задаётся вручную, следует за пешкой; рыскание = 0 (Этап 1),
 ## наклон фиксированный. Зум колесом мыши в разумных пределах.
 
-const BASE_OFFSET := Vector3(0.0, 12.5, 9.5)
-const ZOOM_MIN := 0.65
-const ZOOM_MAX := 1.45
+## Этап 3.3: камера ближе и ниже — персонаж (модель ~1.8-2.4 м с крыльями/
+## оружием) занимает читаемую часть кадра, но арена и несколько врагов видны.
+const BASE_OFFSET := Vector3(0.0, 5.9, 6.6) ## этажность ~42°: силуэт, крылья и враги в кадре
+const ZOOM_MIN := 0.7
+const ZOOM_MAX := 1.6
+const MIN_CAM_Y := 1.6 ## не проваливаться под пол при любом зуме/тряске
 const SHAKE_DECAY := 5.5
 
 var target: Node3D
@@ -43,13 +46,14 @@ func _process(delta: float) -> void:
 	if not _active or target == null:
 		return
 	var desired := target.global_position + BASE_OFFSET * zoom_factor
+	desired.y = maxf(desired.y, MIN_CAM_Y)
 	global_position = global_position.lerp(desired, minf(1.0, delta * 10.0))
 	if _shake > 0.01:
 		_shake = maxf(0.0, _shake - SHAKE_DECAY * delta * _shake - 0.4 * delta)
 		var s := _shake * 0.25
 		global_position += Vector3(randf_range(-s, s), randf_range(-s, s), randf_range(-s, s))
-	## Камера смотрит чуть впереди цели.
-	var look_at_pos := target.global_position + Vector3(0.0, 1.0, 0.0)
+	## Камера смотрит чуть выше центра цели — крылья/оружие не обрезаются.
+	var look_at_pos := target.global_position + Vector3(0.0, 1.25, 0.0)
 	var dir := look_at_pos - global_position
 	if dir.length_squared() > 0.01:
 		_camera.look_at_from_position(global_position, look_at_pos, Vector3.UP)

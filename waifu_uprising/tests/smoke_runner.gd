@@ -215,14 +215,19 @@ func _test_data_layers() -> void:
 	for cdef in Classes.get_form_chain(&"valkyrie"):
 		if cdef.model_scene != null:
 			vk_models += 1
-	_check(with_model == 3 and vk_models == 3,
-		"Слоты .glb: 3 подключены (вся цепочка Валькирии), 21 слот остальных классов пуст")
+	var bk_models := 0
+	for cdef in Classes.get_form_chain(&"berserk"):
+		if cdef.model_scene != null:
+			bk_models += 1
+	_check(with_model == 6 and vk_models == 3 and bk_models == 3,
+		"Слоты .glb: 6 подключены (цепочки Валькирии и Берсерки), 18 слотов остальных классов пусты")
 	## --- Этап 3.2: настоящие .glb-модели трёх форм Валькирии (Blender, PBR, skin).
 	var need_anims := ["idle", "run", "attack", "skill", "parry", "hit", "death", "transform"]
 	var glb_ok := true
 	var glb_detail := ""
-	for f in ["valkyrie_f1", "valkyrie_f2", "valkyrie_f3"]:
-		var sc := load("res://models/valkyrie/%s.glb" % f) as PackedScene
+	for f in ["valkyrie/valkyrie_f1", "valkyrie/valkyrie_f2", "valkyrie/valkyrie_f3",
+			"berserk/berserk_f1", "berserk/berserk_f2", "berserk/berserk_f3"]:
+		var sc := load("res://models/%s.glb" % f) as PackedScene
 		if sc == null:
 			glb_ok = false
 			glb_detail = f + ":load fail"
@@ -240,14 +245,15 @@ func _test_data_layers() -> void:
 				if not ap.has_animation(an):
 					missing = "anim:" + an
 					break
-		if missing == "" and f == "valkyrie_f3" and mroot.find_child("Aura", true, false) == null:
+		if missing == "" and (f == "valkyrie/valkyrie_f3" or f == "berserk/berserk_f3") \
+				and mroot.find_child("Aura", true, false) == null:
 			missing = "aura"
 		if missing != "":
 			glb_ok = false
 			glb_detail = f + ":" + missing
 		remove_child(mroot)
 		mroot.free()
-	_check(glb_ok, "3 формы Валькирии .glb: скин+скелет(24 кости)+8 анимаций+WeaponPivot/Aura [%s]" % glb_detail)
+	_check(glb_ok, "6 моделей .glb (Валькирия+Берсерка ×3): скин+скелет+8 анимаций+WeaponPivot/Aura [%s]" % glb_detail)
 	## Слот model_scene: внешняя модель заменяет заглушку без правки кода (путь Inspector).
 	var bdef := Classes.get_class_def(&"berserk")
 	var holder2 := Node3D.new()
@@ -498,11 +504,12 @@ func _test_full_match_flow() -> void:
 	var obj_after := int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	_obj_after_match1 = obj_after
 	var diag := ""
-	## Предел +150: разовое построение UI матча (строки магазина ~40 узлов, карточки,
-	## строки игроков) — легитимный одноразовый рост. Настоящая проверка утечек —
-	## кросс-матчевое сравнение в конце _test_defeat_and_down_flow (объекты не должны
-	## накапливаться от матча к матчу).
-	if obj_after > _obj_baseline + 150:
+	## Предел +260: разовое построение UI матча (строки магазина ~40 узлов, карточки,
+	## строки игроков) ПЛЮС узлы инстанцированной .glb-модели пешки (~80 на форму,
+	## Этап 3.3 заменил лёгкую заглушку моделью) — легитимный одноразовый рост.
+	## Настоящая проверка утечек — кросс-матчевое сравнение в конце
+	## _test_defeat_and_down_flow (объекты не должны накапливаться от матча к матчу).
+	if obj_after > _obj_baseline + 260:
 		var enemies_left := get_tree().get_nodes_in_group("enemy_units").size()
 		var hud_node2 := get_tree().current_scene.get_node_or_null(^"HUD")
 		var cards := -1
@@ -513,8 +520,8 @@ func _test_full_match_flow() -> void:
 		var entities := get_tree().current_scene.get_node_or_null(^"Entities")
 		diag = " [diag: врагов=%d карт=%d тостов=%d сущностей=%d]" % [
 			enemies_left, cards, toasts, entities.get_child_count() if entities != null else -1]
-	_check(obj_after <= _obj_baseline + 150,
-		"Объекты в матче: разовый рост в пределах UI (%d до волны -> %d после, предел +%d)%s" % [_obj_baseline, obj_after, 150, diag])
+	_check(obj_after <= _obj_baseline + 260,
+		"Объекты в матче: разовый рост в пределах UI+модели (%d до волны -> %d после, предел +%d)%s" % [_obj_baseline, obj_after, 260, diag])
 
 # ------------------------------------------------------------------ эволюция (Этап 3)
 
@@ -585,8 +592,8 @@ func _test_evolution() -> void:
 		"Форма II: реальные статусы — урон 30, макс.HP 150 (модификаторы 1.0)")
 	var vis_root := pawn.visuals.get_node_or_null(^"ModelRoot")
 	_check(vis_root != null and vis_root.get_child_count() > 0, "Форма II: визуальная модель перестроена")
-	_check(pawn.visuals.get_node_or_null(^"ModelRoot/Model") == null and pawn.visuals.get("_anim") == null,
-		"Берсерка НЕ сломана: процедурная заглушка (без .glb и AnimationPlayer)")
+	_check(pawn.visuals.get_node_or_null(^"ModelRoot/Model") != null and pawn.visuals.get("_anim") != null,
+		"Берсерка: собственная .glb-модель формы подключена (процедурный fallback заменён)")
 
 	## Уровень 5 → форма III «Абсолютная ярость».
 	sys.add_xp(777, 450)

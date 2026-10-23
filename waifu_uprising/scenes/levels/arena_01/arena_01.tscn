@@ -1,4 +1,4 @@
-[gd_scene load_steps=37 format=3]
+[gd_scene load_steps=58 format=3]
 
 [ext_resource type="Script" path="res://scripts/levels/arena_01.gd" id="1_arena"]
 [ext_resource type="Script" path="res://scripts/progression/wave_manager.gd" id="2_wave"]
@@ -20,15 +20,16 @@ sky_material = SubResource("sky_mat")
 [sub_resource type="Environment" id="env"]
 background_mode = 2
 sky = SubResource("sky")
-ambient_light_source = 3
-ambient_light_energy = 0.9
+ambient_light_source = 2
+ambient_light_color = Color(0.45, 0.42, 0.6, 1)
+ambient_light_energy = 0.5
 tonemap_mode = 2
 glow_enabled = true
 glow_intensity = 0.55
 glow_bloom = 0.12
 fog_enabled = true
 fog_light_color = Color(0.16, 0.1, 0.26, 1)
-fog_density = 0.006
+fog_density = 0.0035
 
 [sub_resource type="StandardMaterial3D" id="mat_floor"]
 albedo_color = Color(0.1, 0.085, 0.155, 1)
@@ -117,6 +118,110 @@ cell_height = 0.25
 agent_radius = 0.45
 agent_height = 1.5
 agent_max_climb = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_ring_teal"]
+albedo_color = Color(0.05, 0.35, 0.4, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(0.15, 0.85, 0.95, 1)
+emission_energy_multiplier = 0.8
+
+[sub_resource type="StandardMaterial3D" id="mat_ring_gold"]
+albedo_color = Color(0.4, 0.3, 0.1, 1)
+metallic = 0.8
+roughness = 0.35
+emission_enabled = true
+emission = Color(1.0, 0.75, 0.3, 1)
+emission_energy_multiplier = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_rune"]
+albedo_color = Color(0.1, 0.3, 0.35, 1)
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.2, 0.9, 1.0, 1)
+emission_energy_multiplier = 1.1
+
+[sub_resource type="StandardMaterial3D" id="mat_brazier"]
+albedo_color = Color(0.25, 0.22, 0.28, 1)
+metallic = 0.7
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="mat_flame"]
+albedo_color = Color(1.0, 0.45, 0.1, 1)
+emission_enabled = true
+emission = Color(1.0, 0.5, 0.12, 1)
+emission_energy_multiplier = 2.4
+
+[sub_resource type="StandardMaterial3D" id="mat_banner_red"]
+albedo_color = Color(0.45, 0.06, 0.14, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="mat_banner_teal"]
+albedo_color = Color(0.06, 0.3, 0.36, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="mat_stone_cap"]
+albedo_color = Color(0.22, 0.19, 0.3, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_curb"]
+albedo_color = Color(0.3, 0.24, 0.12, 1)
+metallic = 0.6
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.9, 0.65, 0.25, 1)
+emission_energy_multiplier = 0.25
+
+[sub_resource type="TorusMesh" id="mesh_ring_outer"]
+material = SubResource("mat_ring_teal")
+inner_radius = 15.5
+outer_radius = 16.0
+
+[sub_resource type="TorusMesh" id="mesh_ring_inner"]
+material = SubResource("mat_ring_gold")
+inner_radius = 9.5
+outer_radius = 9.9
+
+[sub_resource type="BoxMesh" id="mesh_rune"]
+material = SubResource("mat_rune")
+size = Vector3(0.5, 0.03, 1.0)
+
+[sub_resource type="CylinderMesh" id="mesh_braz_ped"]
+material = SubResource("mat_brazier")
+top_radius = 0.3
+bottom_radius = 0.45
+height = 1.1
+
+[sub_resource type="CylinderMesh" id="mesh_braz_bowl"]
+material = SubResource("mat_brazier")
+top_radius = 0.52
+bottom_radius = 0.4
+height = 0.28
+
+[sub_resource type="SphereMesh" id="mesh_flame"]
+material = SubResource("mat_flame")
+radius = 0.26
+height = 0.52
+
+[sub_resource type="BoxMesh" id="mesh_banner"]
+material = SubResource("mat_banner_red")
+size = Vector3(1.7, 3.6, 0.08)
+
+[sub_resource type="BoxMesh" id="mesh_banner_trim"]
+material = SubResource("mat_ring_gold")
+size = Vector3(1.7, 0.35, 0.1)
+
+[sub_resource type="BoxMesh" id="mesh_capital"]
+material = SubResource("mat_stone_cap")
+size = Vector3(1.7, 0.32, 1.7)
+
+[sub_resource type="BoxMesh" id="mesh_cap_band"]
+material = SubResource("mat_ring_gold")
+size = Vector3(1.5, 0.12, 1.5)
+
+[sub_resource type="BoxMesh" id="mesh_curb"]
+material = SubResource("mat_curb")
+size = Vector3(43.0, 0.16, 0.45)
 
 [node name="Arena01" type="Node3D"]
 script = ExtResource("1_arena")
@@ -314,6 +419,168 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 0.1, 13)
 
 [node name="EnemySpawn7" type="Marker3D" parent="SpawnPoints" groups=["enemy_spawn_points"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 0.1, 13)
+
+[node name="Decor" type="Node3D" parent="."]
+[node name="RingOuter" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.03, 0)
+mesh = SubResource("mesh_ring_outer")
+[node name="RingInner" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.03, 0)
+mesh = SubResource("mesh_ring_inner")
+[node name="Rune1" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0.9239, 0, 0.3827, 0, 1, 0, -0.3827, 0, 0.9239, 11.548, 0.03, 4.784)
+mesh = SubResource("mesh_rune")
+[node name="Rune2" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0.3827, 0, 0.9239, 0, 1, 0, -0.9239, 0, 0.3827, 4.784, 0.03, 11.548)
+mesh = SubResource("mesh_rune")
+[node name="Rune3" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(-0.3827, 0, 0.9239, 0, 1, 0, -0.9239, 0, -0.3827, -4.784, 0.03, 11.548)
+mesh = SubResource("mesh_rune")
+[node name="Rune4" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(-0.9239, 0, 0.3827, 0, 1, 0, -0.3827, 0, -0.9239, -11.548, 0.03, 4.784)
+mesh = SubResource("mesh_rune")
+[node name="Rune5" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(-0.9239, 0, -0.3827, 0, 1, 0, 0.3827, 0, -0.9239, -11.548, 0.03, -4.784)
+mesh = SubResource("mesh_rune")
+[node name="Rune6" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(-0.3827, 0, -0.9239, 0, 1, 0, 0.9239, 0, -0.3827, -4.784, 0.03, -11.548)
+mesh = SubResource("mesh_rune")
+[node name="Rune7" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0.3827, 0, -0.9239, 0, 1, 0, 0.9239, 0, 0.3827, 4.784, 0.03, -11.548)
+mesh = SubResource("mesh_rune")
+[node name="Rune8" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0.9239, 0, -0.3827, 0, 1, 0, 0.3827, 0, 0.9239, 11.548, 0.03, -4.784)
+mesh = SubResource("mesh_rune")
+[node name="Brazier1" type="Node3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, 18)
+[node name="Ped" type="MeshInstance3D" parent="Decor/Brazier1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+mesh = SubResource("mesh_braz_ped")
+[node name="Bowl" type="MeshInstance3D" parent="Decor/Brazier1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.22, 0)
+mesh = SubResource("mesh_braz_bowl")
+[node name="Flame" type="MeshInstance3D" parent="Decor/Brazier1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("mesh_flame")
+[node name="FireLight" type="OmniLight3D" parent="Decor/Brazier1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+light_color = Color(1, 0.55, 0.22, 1)
+light_energy = 2.4
+omni_range = 13.0
+omni_attenuation = 1.2
+[node name="Brazier2" type="Node3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, 18)
+[node name="Ped" type="MeshInstance3D" parent="Decor/Brazier2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+mesh = SubResource("mesh_braz_ped")
+[node name="Bowl" type="MeshInstance3D" parent="Decor/Brazier2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.22, 0)
+mesh = SubResource("mesh_braz_bowl")
+[node name="Flame" type="MeshInstance3D" parent="Decor/Brazier2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("mesh_flame")
+[node name="FireLight" type="OmniLight3D" parent="Decor/Brazier2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+light_color = Color(1, 0.55, 0.22, 1)
+light_energy = 2.4
+omni_range = 13.0
+omni_attenuation = 1.2
+[node name="Brazier3" type="Node3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, -18)
+[node name="Ped" type="MeshInstance3D" parent="Decor/Brazier3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+mesh = SubResource("mesh_braz_ped")
+[node name="Bowl" type="MeshInstance3D" parent="Decor/Brazier3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.22, 0)
+mesh = SubResource("mesh_braz_bowl")
+[node name="Flame" type="MeshInstance3D" parent="Decor/Brazier3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("mesh_flame")
+[node name="FireLight" type="OmniLight3D" parent="Decor/Brazier3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+light_color = Color(1, 0.55, 0.22, 1)
+light_energy = 2.4
+omni_range = 13.0
+omni_attenuation = 1.2
+[node name="Brazier4" type="Node3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, -18)
+[node name="Ped" type="MeshInstance3D" parent="Decor/Brazier4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+mesh = SubResource("mesh_braz_ped")
+[node name="Bowl" type="MeshInstance3D" parent="Decor/Brazier4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.22, 0)
+mesh = SubResource("mesh_braz_bowl")
+[node name="Flame" type="MeshInstance3D" parent="Decor/Brazier4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("mesh_flame")
+[node name="FireLight" type="OmniLight3D" parent="Decor/Brazier4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+light_color = Color(1, 0.55, 0.22, 1)
+light_energy = 2.4
+omni_range = 13.0
+omni_attenuation = 1.2
+[node name="Capital1" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 3.16, 9)
+mesh = SubResource("mesh_capital")
+[node name="CapBand1" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 2.92, 9)
+mesh = SubResource("mesh_cap_band")
+[node name="Capital2" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 3.16, 9)
+mesh = SubResource("mesh_capital")
+[node name="CapBand2" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 2.92, 9)
+mesh = SubResource("mesh_cap_band")
+[node name="Capital3" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 3.16, -9)
+mesh = SubResource("mesh_capital")
+[node name="CapBand3" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 2.92, -9)
+mesh = SubResource("mesh_cap_band")
+[node name="Capital4" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 3.16, -9)
+mesh = SubResource("mesh_capital")
+[node name="CapBand4" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 2.92, -9)
+mesh = SubResource("mesh_cap_band")
+[node name="Banner1" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 2.3, -21)
+mesh = SubResource("mesh_banner")
+[node name="BannerTrim1" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0.62, -21)
+mesh = SubResource("mesh_banner_trim")
+[node name="Banner2" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 2.3, -21)
+mesh = SubResource("mesh_banner")
+[node name="BannerTrim2" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0.62, -21)
+mesh = SubResource("mesh_banner_trim")
+[node name="Banner3" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 2.3, 21)
+mesh = SubResource("mesh_banner")
+material_override = SubResource("mat_banner_teal")
+[node name="BannerTrim3" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0.62, 21)
+mesh = SubResource("mesh_banner_trim")
+[node name="Banner4" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 2.3, 21)
+mesh = SubResource("mesh_banner")
+material_override = SubResource("mat_banner_teal")
+[node name="BannerTrim4" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0.62, 21)
+mesh = SubResource("mesh_banner_trim")
+[node name="CurbN" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, -21.5)
+mesh = SubResource("mesh_curb")
+[node name="CurbS" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, 21.5)
+mesh = SubResource("mesh_curb")
+[node name="CurbE" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 21.5, 0.08, 0)
+mesh = SubResource("mesh_curb")
+[node name="CurbW" type="MeshInstance3D" parent="Decor"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -21.5, 0.08, 0)
+mesh = SubResource("mesh_curb")
 
 [node name="Entities" type="Node3D" parent="."]
 

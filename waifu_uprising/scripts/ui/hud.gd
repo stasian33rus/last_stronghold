@@ -56,8 +56,21 @@ var _local_prog_level: int = 0
 @onready var ready_check: CheckButton = $ShopPanel/VBox/ReadyRow/ReadyCheck
 @onready var ready_state_label: Label = $ShopPanel/VBox/ReadyRow/ReadyStateLabel
 
+var debug_label: Label
+
 func _ready() -> void:
 	result_panel.visible = false
+	## Техническая диагностика (FPS/рендерер/драйвер) — СКРЫТА в обычном режиме,
+	## включается клавишей F3 (действие debug_overlay).
+	debug_label = Label.new()
+	debug_label.name = "DebugLabel"
+	debug_label.visible = false
+	debug_label.add_theme_font_size_override("font_size", 14)
+	debug_label.add_theme_color_override("font_color", Color(0.7, 1.0, 0.7))
+	debug_label.anchors_preset = 5 ## центр-верх
+	debug_label.offset_top = 64.0
+	debug_label.offset_bottom = 110.0
+	add_child(debug_label)
 	upgrade_panel.visible = false
 	shop_panel.visible = false
 	ready_check.toggled.connect(_on_ready_toggled)
@@ -73,12 +86,32 @@ func _ready() -> void:
 	Events.progression_updated.connect(func(payload: Dictionary) -> void: _local_prog = payload)
 	Events.shop_result_msg.connect(_on_shop_result)
 	Events.unit_evolved.connect(_on_unit_evolved)
+	set_process(true)
 	var mcs := get_tree().get_nodes_in_group("match_controller")
 	_mc = mcs[0] if mcs.size() > 0 else null
 	var gigas := get_tree().get_nodes_in_group("gigachad")
 	_giga = gigas[0] if gigas.size() > 0 else null
 
+var _debug_acc := 0.0
+
+func _update_debug(delta: float) -> void:
+	if debug_label == null or not debug_label.visible:
+		return
+	_debug_acc += delta
+	if _debug_acc < 0.5:
+		return
+	_debug_acc = 0.0
+	debug_label.text = "FPS: %d | %s | %s | %dx%d" % [
+		Engine.get_frames_per_second(),
+		str(ProjectSettings.get_setting("rendering/renderer/rendering_method")),
+		RenderingServer.get_current_rendering_driver_name(),
+		get_viewport().get_visible_rect().size.x,
+		get_viewport().get_visible_rect().size.y]
+
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("debug_overlay"):
+		debug_label.visible = not debug_label.visible
+		return
 	if upgrade_panel.visible:
 		if event.is_action_pressed("choose_1"):
 			_request_offer_choice(0)
@@ -93,6 +126,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_menu()
 
 func _process(delta: float) -> void:
+	_update_debug(delta)
 	_find_local_pawn(delta)
 	_find_system()
 	_update_giga()
