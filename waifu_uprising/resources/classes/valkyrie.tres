@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/data/class_definition.gd" id="1_cls"]
 [ext_resource type="Resource" path="res://resources/classes/valkyrie_f2.tres" id="2_f2"]
 [ext_resource type="Resource" path="res://resources/classes/valkyrie_f3.tres" id="3_f3"]
-[ext_resource type="PackedScene" path="res://models/valkyrie/valkyrie_f1.glb" id="4_mdl"]
+[ext_resource type="PackedScene" path="res://models/valkyrie/valkyrie_art_f1.glb" id="4_mdl"]
 
 [resource]
 script = ExtResource("1_cls")
