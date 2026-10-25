@@ -5,7 +5,9 @@ extends Node
 ## Работает на сервере; клиенты видят результат через репликацию позиции.
 
 @export var decay: float = 9.0 ## Экспоненциальное затухание, 1/с.
-@export var max_speed: float = 30.0
+@export var max_speed: float = 18.0 ## Предсказуемый предел накопленной скорости (Этап 4.2).
+@export var max_impulse_add: float = 14.0 ## Предел ОДНОГО импульса: серия попаданий
+## не даёт бесконтрольного роста (накопление дополнительно ограничено max_speed).
 
 var kb_velocity: Vector3 = Vector3.ZERO
 
@@ -19,6 +21,7 @@ func apply(direction: Vector3, force: float, knockback_mass: float = 1.0) -> voi
 	dir = dir.normalized()
 	var impulse := dir * (force / maxf(0.2, knockback_mass))
 	impulse.y = maxf(0.0, force * 0.12) ## лёгкий подскок — читается «вес» удара
+	impulse = impulse.limit_length(max_impulse_add)
 	kb_velocity = (kb_velocity + impulse).limit_length(max_speed)
 
 func consume(delta: float) -> Vector3:

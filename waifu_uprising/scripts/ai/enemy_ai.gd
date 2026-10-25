@@ -13,6 +13,18 @@ enum State { SPAWN = 0, CHASE = 1, WINDUP = 2, STRIKE = 3, RECOVER = 4, HITSTUN 
 
 const GRAVITY: float = 24.0
 
+## Этап 4.2 — лёгкое взаимное раздвигание врагов (только сервер). Физические
+## тела уже сталкиваются (layer/mask), но при плотном прессинге к цели этого
+## недостаточно: добавляем рулёжку-разделение по сетке-хэшу. Без RigidBody3D,
+## без телепортов: только ограниченное ускорение, гасимое трением/стенами.
+const SEP_RADIUS: float = 0.95
+const SEP_ACCEL: float = 16.0
+const SEP_CTRL_EXTRA: float = 2.4 ## насколько разделение может превысить скорость бега
+const SEP_CELL: float = 1.0
+const SEP_MAX_NEIGHBOURS: int = 12 ## предел проверок на тело: O(n·k), не O(n²)
+static var _sep_grid: Dictionary = {}
+static var _sep_frame: int = -1
+
 var team: int = Units.Team.ENEMY
 var owner_peer: int = 1 ## враги всегда принадлежат серверу
 var def: EnemyDefinition
@@ -24,6 +36,7 @@ var _state_time: float = 0.0
 var _target: Node3D
 var _retarget_in: float = 0.0
 var _ctrl_vel := Vector3.ZERO ## управляемая составляющая скорости (без отбрасывания)
+var _sep_vel := Vector3.ZERO ## сглаженная составляющая взаимного раздвигания (Этап 4.2)
 var _lunge_dir := Vector3.ZERO
 var _strike_hitbox_on := false
 var _strike_hits_done := 0
@@ -115,14 +128,73 @@ func _server_ai(delta: float) -> void:
 				if _corpse_timer <= 0.0:
 					queue_free() ## MultiplayerSpawner удалит труп и на клиентах
 
+	## Взаимное раздвигание (Этап 4.2): трупы не расталкиваются.
+	if state != State.DEAD:
+		_apply_separation(delta)
+
 	## Итоговая скорость = управление + отбрасывание (КБ не накапливается).
 	var kb_vel := kb.consume(delta)
-	velocity.x = _ctrl_vel.x + kb_vel.x
-	velocity.z = _ctrl_vel.z + kb_vel.z
+	velocity.x = _ctrl_vel.x + kb_vel.x + _sep_vel.x
+	velocity.z = _ctrl_vel.z + kb_vel.z + _sep_vel.z
 	_apply_gravity(delta)
 	if kb_vel.y > 0.0 and is_on_floor():
 		velocity.y = kb_vel.y
 	move_and_slide()
+
+static func _sep_cell_of(p: Vector3) -> Vector3i:
+	return Vector3i(int(floor(p.x / SEP_CELL)), int(floor(p.z / SEP_CELL)), 0)
+
+func _sep_rebuild_grid() -> void:
+	_sep_grid.clear()
+	for n in get_tree().get_nodes_in_group("enemy_units"):
+		var e := n as EnemyBase
+		if e == null or not is_instance_valid(e) or e.state == State.DEAD or not e.is_inside_tree():
+			continue
+		var c := _sep_cell_of(e.global_position)
+		if not _sep_grid.has(c):
+			_sep_grid[c] = []
+		_sep_grid[c].append(e)
+
+## Рулёжка-разделение: сумма отталкиваний от соседей ближе SEP_RADIUS, взвешенная
+## массами (тяжёлого лёгкий толкает сильнее, чем наоборот). Применение — через
+## ограниченное ускорение и кламп управляющей скорости: без дрожания и взлётов.
+func _apply_separation(delta: float) -> void:
+	if _sep_frame != Engine.get_physics_frames():
+		_sep_frame = Engine.get_physics_frames()
+		_sep_rebuild_grid()
+	var cell := _sep_cell_of(global_position)
+	var push := Vector3.ZERO
+	var checked := 0
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var arr: Array = _sep_grid.get(Vector3i(cell.x + dx, cell.z + dz, 0), [])
+			for o in arr:
+				var other := o as EnemyBase
+				if other == null or other == self:
+					continue
+				checked += 1
+				if checked > SEP_MAX_NEIGHBOURS:
+					break
+				var d := global_position - other.global_position
+				d.y = 0.0
+				var dist := d.length()
+				if dist < 0.001:
+					## Точное совпадение: детерминированный разворот по id экземпляра.
+					var ang := float(int(get_instance_id()) % 628) * 0.01
+					d = Vector3(cos(ang), 0.0, sin(ang))
+					dist = 0.001
+				if dist >= SEP_RADIUS:
+					continue
+				var w := 1.0 - dist / SEP_RADIUS
+				var m_self := def.knockback_mass
+				var m_other := other.def.knockback_mass
+				push += (d / dist) * w * (m_other / maxf(0.2, m_self + m_other))
+	## Отдельная сглаженная составляющая: преследование перезаписывает _ctrl_vel
+	## каждый кадр, поэтому разведение живёт своей компонентой скорости.
+	var desired := Vector3.ZERO
+	if push.length_squared() > 0.000001:
+		desired = push.normalized() * minf(push.length() * 3.0, SEP_CTRL_EXTRA)
+	_sep_vel = _sep_vel.lerp(desired, clampf(delta * 10.0, 0.0, 1.0))
 
 func _decay_ctrl(delta: float, friction_factor: float = 1.0) -> void:
 	var f := def.friction * friction_factor * delta

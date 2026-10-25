@@ -27,6 +27,7 @@ func _run() -> void:
 	await _test_full_match_flow()
 	await _test_defeat_and_down_flow()
 	await _test_rescue_flow()
+	await _test_physics_flow()
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
@@ -1427,3 +1428,150 @@ func _test_rescue_flow() -> void:
 			pawn.queue_free()
 	await _frames(3)
 	_check(true, "Спасение: пробные пешки освобождены")
+
+## Этап 4.2: физика отбрасывания и столкновений врагов (offline, сервер).
+func _test_physics_flow() -> void:
+	var arena := get_tree().current_scene
+	if arena == null or not arena.has_method("spawn_enemy"):
+		_check(false, "Физика: арена доступна для спавна врагов")
+		return
+	var fdef := load("res://resources/enemies/fop.tres") as EnemyDefinition
+	var spawned: Array = []
+	var spawn_foe := func(pos: Vector3) -> EnemyBase:
+		var e: EnemyBase = arena.spawn_enemy(fdef, pos)
+		if e != null:
+			spawned.append(e)
+		return e
+
+	## 1. Направление импульса — от атакующего/направления удара.
+	var foe: EnemyBase = spawn_foe.call(Vector3(6.0, 0.2, 6.0))
+	if foe == null:
+		_check(false, "Физика: враг заспавнен для тестов")
+		return
+	await _frames(3)
+	var p0 := foe.global_position
+	var dir := Vector3(1.0, 0.0, 0.0)
+	foe.health.take_damage(Units.make_damage(1.0, null, 1, dir, 8.0, p0))
+	await _seconds(0.25)
+	var disp := foe.global_position - p0
+	disp.y = 0.0
+	_check(disp.length() > 0.15 and disp.normalized().dot(dir) > 0.7,
+			"Физика: импульс направлен по удару (dot=%.2f, смещение %.2f м)" % [disp.normalized().dot(dir), disp.length()])
+
+	## 2. Затухание kb-составляющей (позицию позже засоряет преследование).
+	foe.kb.apply(Vector3(1.0, 0.0, 0.0), 8.0, foe.def.knockback_mass)
+	await _frames(1)
+	var v0 := foe.kb.kb_velocity.length()
+	await _seconds(0.3)
+	var v1 := foe.kb.kb_velocity.length()
+	await _seconds(0.3)
+	var v2 := foe.kb.kb_velocity.length()
+	await _seconds(0.9)
+	var stopped := foe.kb.kb_velocity.length() < 0.15
+	_check(v0 > 1.0 and v1 < v0 * 0.5 and v2 < v1 * 0.5 and stopped,
+			"Физика: импульс затухает (kb %.1f -> %.1f -> %.1f -> %.2f)" % [v0, v1, v2, foe.kb.kb_velocity.length()])
+
+	## 3. Предел ОДНОГО импульса и накопления (серия из 10 попаданий).
+	var before := foe.kb.kb_velocity.length()
+	foe.kb.apply(Vector3(0.0, 0.0, 1.0), 100.0, foe.def.knockback_mass)
+	var added := foe.kb.kb_velocity.length() - before
+	var max_seen := 0.0
+	for i in 10:
+		foe.kb.apply(Vector3(0.0, 0.0, 1.0), 9.0, foe.def.knockback_mass)
+		max_seen = maxf(max_seen, foe.kb.kb_velocity.length())
+		await _frames(1)
+	_check(added <= foe.kb.max_impulse_add + 0.001 and max_seen <= foe.kb.max_speed + 0.001,
+			"Физика: один импульс <= %.0f, накопление <= %.0f (факт %.1f/%.1f)" % [
+				foe.kb.max_impulse_add, foe.kb.max_speed, added, max_seen])
+
+	## 4. Препятствие останавливает: без сквозного прохода и телепортов.
+	var crate_scn := load("res://scenes/interactables/crate_destructible.tscn") as PackedScene
+	var crate: Node3D = crate_scn.instantiate()
+	arena.add_child(crate)
+	var wall_foe: EnemyBase = spawn_foe.call(Vector3(-6.0, 0.2, -6.0))
+	await _frames(3)
+	if wall_foe == null:
+		_check(false, "Физика: враг у препятствия заспавнен")
+	else:
+		var wdir := Vector3(0.0, 0.0, 1.0)
+		crate.global_position = wall_foe.global_position + wdir * 1.0
+		await _frames(2)
+		var wp0 := wall_foe.global_position
+		wall_foe.kb.apply(wdir, 10.0, wall_foe.def.knockback_mass)
+		await _seconds(0.6)
+		var moved := (wall_foe.global_position - wp0).dot(wdir)
+		var gap := wall_foe.global_position.distance_to(crate.global_position)
+		_check(moved < 0.95 and gap > 0.4 and wall_foe.global_position.is_finite(),
+				"Физика: препятствие гасит импульс (ход %.2f м, зазор %.2f м)" % [moved, gap])
+	crate.queue_free()
+
+	## 5. Два врага в одной точке расталкиваются без взрывного разлёта.
+	var a1: EnemyBase = spawn_foe.call(Vector3(0.0, 0.2, 14.0))
+	var a2: EnemyBase = spawn_foe.call(Vector3(0.05, 0.2, 14.05)) ## перекрытие моделей
+	await _frames(3)
+	if a1 == null or a2 == null:
+		_check(false, "Физика: пара врагов заспавнена")
+	else:
+		await _seconds(1.2)
+		var pair_d := a1.global_position.distance_to(a2.global_position)
+		_check(pair_d >= 0.55 and pair_d < 6.0,
+				"Физика: совпавшие враги разошлись на %.2f м (без наложения)" % pair_d)
+
+	## 6. Группа из 6: без дрожания/взрывных скоростей, держатся рядом.
+	var cluster: Array = []
+	for i in 6:
+		var c: EnemyBase = spawn_foe.call(Vector3(10.0 + 0.3 * i, 0.2, -2.0))
+		if c != null:
+			cluster.append(c)
+	await _frames(3)
+	var vmax := 0.0
+	var cap_speed := fdef.move_speed + 2.4 + 0.75
+	for i in 36:
+		for c in cluster:
+			if is_instance_valid(c):
+				var hv := Vector2(c.velocity.x, c.velocity.z).length()
+				vmax = maxf(vmax, hv)
+		await _frames(2)
+	var centroid := Vector3.ZERO
+	var alive := 0
+	for c in cluster:
+		if is_instance_valid(c):
+			centroid += c.global_position
+			alive += 1
+	centroid /= maxf(1.0, float(alive))
+	var spread := 0.0
+	for c in cluster:
+		if is_instance_valid(c):
+			spread = maxf(spread, c.global_position.distance_to(centroid))
+	_check(vmax <= cap_speed and spread < 6.0 and alive == 6,
+			"Физика: группа из 6 без дрожания (vmax=%.1f <= %.1f, разброс %.1f м)" % [vmax, cap_speed, spread])
+
+	## 7. Урон и событие попадания — ровно один раз за активацию хитбокса.
+	var pawn := _local_pawn()
+	var hit_foe: EnemyBase = spawn_foe.call(Vector3(0.0, 0.2, -14.0))
+	await _frames(3)
+	if pawn == null or hit_foe == null:
+		_check(false, "Физика: пешка и цель для теста наград доступны")
+	else:
+		var hits := [0] ## лямбды GDScript захватывают скаляры по значению — нужен контейнер
+		var cb := func(_atk: Node, tgt: Node, _d: Dictionary) -> void:
+			if tgt == hit_foe:
+				hits[0] += 1
+		Events.server_hit_landed.connect(cb)
+		var hp0 := hit_foe.health.health
+		## Враг сам входит в активированный хитбокс (area_entered не стреляет
+		## по уже перекрывающимся зонам): ставим его в 2.0 м — добегает сам.
+		hit_foe.global_position = pawn.global_position - pawn.global_transform.basis.z * 2.0
+		await _frames(2)
+		pawn.hitbox.activate(0.8)
+		await _seconds(1.0)
+		Events.server_hit_landed.disconnect(cb)
+		_check(hits[0] == 1 and absf((hp0 - hit_foe.health.health) - float(pawn.hitbox.damage)) < 0.01,
+				"Физика: одно попадание за активацию (событий %d, урон %.0f)" % [hits[0], hp0 - hit_foe.health.health])
+
+	## Уборка: убить пробных врагов (трупы удалятся сами), не трогая баланс.
+	for e in spawned:
+		if is_instance_valid(e) and not e.health.is_dead:
+			e.health.take_damage(Units.make_damage(99999.0, null, 0, Vector3.ZERO, 0.0, e.global_position))
+	await _frames(4)
+	_check(true, "Физика: пробные враги убраны")

@@ -23,6 +23,9 @@ var _pawn: PlayerPawn
 var _seen_enemy_motion := false
 var _enemy_ref: Node3D
 var _enemy_ref_pos := Vector3.ZERO
+## Этап 4.2:_guard репликации врагов — без телепортов между кадрами клиента.
+var _esm_prev := Vector3.ZERO
+var _esm_init := false
 var _enemies_seen := 0
 var _match_done := false
 var _finished := false
@@ -293,6 +296,13 @@ func _check_sync() -> void:
 			_seen_enemy_motion = true
 			print("[AUTOTEST] client: репликация мира подтверждена (движение врага)")
 			return
+	if mode == "client" and _seen_enemy_motion and _enemy_ref != null and is_instance_valid(_enemy_ref):
+		## Согласованность физики (Этап 4.2): интерполяция без скачков; kb-импульсы
+		## приходят снапшотами скорости, телепортов между кадрами быть не должно.
+		if _esm_init and _enemy_ref.global_position.distance_to(_esm_prev) > 2.5:
+			_finish(false, "enemy replication jump > 2.5 m per frame")
+		_esm_prev = _enemy_ref.global_position
+		_esm_init = true
 
 func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 	if _match_done:
