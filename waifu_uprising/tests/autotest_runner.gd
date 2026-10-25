@@ -43,6 +43,16 @@ var _matches_won := 0
 var _evo_injected := false
 var _evo_local_form := -1
 var _evo_remote_form := -1
+## Спасение (+rescue=1): сервер роняет СВОЮ пешку, клиент спасает её реальным
+## RPC sv_rescue_hold; проверяется репликация DOWN/прогресса/возрождения и
+## очистка канала при отключении спасателя.
+var _rsc_step := 0
+var _rsc_t := 0.0
+var _rsc_holding := false
+var _rsc_hold_sent := false
+var _rsc_reedge_done := false
+var _rsc_progress_seen := false
+var _rsc_revived_hp := -1.0
 
 func _ready() -> void:
 	mode = Game.autotest_mode
@@ -93,6 +103,7 @@ func _physics_process(delta: float) -> void:
 		"match":
 			_drive_pawn(delta)
 			_handle_progression(delta)
+			_handle_rescue_test(delta)
 			_check_sync()
 
 func _set_phase(p: String) -> void:
@@ -173,6 +184,18 @@ func _find_pawn() -> void:
 func _drive_pawn(delta: float) -> void:
 	if _pawn == null or not is_instance_valid(_pawn):
 		_find_pawn()
+		return
+	if Game.autotest_rescue and _rsc_holding:
+		## Режим спасения: подходим к поверженному и держим interact
+		## (атаки отменили бы канал); движение держит нас в радиусе.
+		var mv := Vector2.ZERO
+		var tgt := _remote_pawn_downed()
+		if tgt != null:
+			var d := tgt.global_position - _pawn.global_position
+			d.y = 0.0
+			if d.length() > 0.9:
+				mv = Vector2(d.x, d.z).normalized()
+		_pawn.external_input = {"move": mv, "aim_yaw": _pawn.aim_yaw, "hold_interact": true}
 		return
 	_attack_cd -= delta
 	var target := _priority_enemy()
@@ -368,3 +391,134 @@ func _finish_async(passed: bool) -> void:
 	Sfx.shutdown()
 	Net.disconnect_game()
 	get_tree().quit(0 if passed else 1)
+
+## Сценарий кооперативного спасения (Этап 4.1), только при +rescue=1.
+func _handle_rescue_test(delta: float) -> void:
+	if not Game.autotest_rescue or _match_done:
+		return
+	if _pawn == null or not is_instance_valid(_pawn):
+		_find_pawn()
+		return
+	if _mc == null or _mc.phase != MatchController.Phase.FIGHT:
+		return
+	_rsc_t += delta
+	var remote_downed := _remote_pawn_downed()
+	match mode:
+		"host":
+			match _rsc_step:
+				0:
+					if _rsc_t < 2.0:
+						return
+					var client_pawn := _remote_pawn()
+					if client_pawn == null:
+						return
+					## Сервер подводит пешку клиента к своей и роняет СВОЮ.
+					client_pawn.global_position = _pawn.global_position + Vector3(1.2, 0.0, 0.0)
+					## Сценарная защита: спасатель не должен умереть от врагов,
+					## пока стоит в канале (иначе канал отменится по смерти).
+					client_pawn.health.grant_invulnerability(45.0)
+					_pawn.health.take_damage(Units.make_damage(9999.0, null, 0, Vector3.ZERO, 0.0, _pawn.global_position))
+					print("[AUTOTEST] rescue: хост повёржен, клиент рядом — жду спасения")
+					_rsc_step = 1
+					_rsc_t = 0.0
+				1:
+					if _pawn.state != PlayerPawn.State.DOWN:
+						print("[AUTOTEST] RESCUE local revived: hp=%.0f (ожидалось %.0f)" % [_pawn.health.health, _pawn.effective_max_health() * 0.45])
+						_rsc_revived_hp = _pawn.health.health
+						_rsc_step = 2
+						_rsc_t = 0.0
+					elif _rsc_t > 12.0:
+						_finish(false, "rescue: host pawn not revived in time")
+				2:
+					if _rsc_t < 1.8:
+						return ## защита после спасения (1.5 с) должна истечь
+					## Второй заход: канал открыт, затем клиент отключается —
+					## сервер обязан отменить канал без краша. Бот хоста мог уйти
+					## бить врагов — повторно подводим пешку клиента перед down.
+					var cp2 := _remote_pawn()
+					if cp2 != null:
+						cp2.global_position = _pawn.global_position + Vector3(1.2, 0.0, 0.0)
+					_pawn.health.take_damage(Units.make_damage(9999.0, null, 0, Vector3.ZERO, 0.0, _pawn.global_position))
+					print("[AUTOTEST] rescue: хост повёржен повторно — жду канал и отключение клиента")
+					_rsc_step = 3
+					_rsc_t = 0.0
+				3:
+					var channel := int(_pawn.get("_rescue_rescuer_peer"))
+					if channel != 0 and Net.get_player_count() < 2:
+						## Клиент отключился: канал должен очиститься тиком сервера.
+						_rsc_step = 4
+						_rsc_wait_cleaned()
+					elif _rsc_t > 25.0:
+						_finish(false, "rescue: disconnect probe timeout")
+				4:
+					pass ## финализация в _rsc_wait_cleaned()
+		"client":
+			match _rsc_step:
+				0:
+					if remote_downed == null:
+						return
+					## Легитимный путь: удержание interact -> намерение -> RPC.
+					_rsc_holding = true
+					_rsc_hold_sent = true
+					print("[AUTOTEST] rescue: клиент держит спасение (interact -> sv_rescue_hold)")
+					_rsc_step = 1
+					_rsc_t = 0.0
+				1:
+					var tgt := remote_downed_or_revived()
+					if tgt != null and float(tgt.get("sync_rescue_progress")) > 0.05 and not _rsc_progress_seen:
+						_rsc_progress_seen = true
+						print("[AUTOTEST] rescue: прогресс реплицирован клиенту (%.0f%%)" % (float(tgt.get("sync_rescue_progress")) * 100.0))
+					if tgt != null and tgt.state != PlayerPawn.State.DOWN:
+						print("[AUTOTEST] RESCUE remote: клиент увидел возрождение чужой пешки (репликация)")
+						_rsc_step = 2
+						_rsc_t = 0.0
+					elif _rsc_t > 12.0:
+						_finish(false, "rescue: client never saw remote revive")
+				2:
+					## Ждём повторного падения хоста: намерение уже активно (hold),
+					## канал должен открыться сам; затем отключаемся прямо в канале.
+					var down2 := _remote_pawn_downed()
+					if down2 == null:
+						return
+					if not _rsc_reedge_done:
+						## Форсируем повторный край намерения (гонка репликации DOWN).
+						_rsc_reedge_done = true
+						_pawn._local_rescue_target = null
+					if int(down2.get("sync_rescuer_peer")) != Net.my_id():
+						return
+					print("[AUTOTEST] rescue: канал 2 открыт намерением клиента — отключаемся в канале")
+					_rsc_step = 3
+					_rsc_t = 0.0
+				3:
+					if _rsc_t > 0.7:
+						_finish(true, "rescue client scenario verified (disconnect in channel)")
+
+func _remote_pawn() -> PlayerPawn:
+	for n in get_tree().get_nodes_in_group("player_pawns"):
+		var p := n as PlayerPawn
+		if p != null and not p.is_local_pawn():
+			return p
+	return null
+
+func _remote_pawn_downed() -> PlayerPawn:
+	var p := _remote_pawn()
+	if p != null and p.state == PlayerPawn.State.DOWN:
+		return p
+	return null
+
+func remote_downed_or_revived() -> PlayerPawn:
+	return _remote_pawn()
+
+## Асинхронное ожидание очистки канала после отключения спасателя.
+func _rsc_wait_cleaned() -> void:
+	var cleaned: bool = false
+	for i in 90:
+		await get_tree().process_frame
+		if int(_pawn.get("_rescue_rescuer_peer")) == 0:
+			cleaned = true
+			break
+	print("[AUTOTEST] RESCUE_DISCONNECT cleaned=%s" % cleaned)
+	if not is_equal_approx(_rsc_revived_hp, _pawn.effective_max_health() * 0.45):
+		_finish(false, "rescue: revived hp mismatch on host")
+	else:
+		_finish(cleaned, "rescue host scenario verified")

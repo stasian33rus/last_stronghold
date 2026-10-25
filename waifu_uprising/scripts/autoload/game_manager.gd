@@ -26,6 +26,7 @@ var autotest_ip: String = "127.0.0.1"
 var autotest_started: bool = false
 var autotest_rematch: bool = false
 var autotest_evolve: bool = false
+var autotest_rescue: bool = false
 var dedicated_mode: bool = false
 var dedicated_port: int = Net.DEFAULT_PORT
 
@@ -56,6 +57,8 @@ func _parse_cmdline() -> void:
 			autotest_rematch = true
 		elif a == "evolve=1" or a == "evolve":
 			autotest_evolve = true
+		elif a == "rescue=1" or a == "rescue":
+			autotest_rescue = true
 		elif a.begins_with("ip="):
 			autotest_ip = a.trim_prefix("ip=")
 		elif a == "fast=1" or a == "fast":

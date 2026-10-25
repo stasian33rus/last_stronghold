@@ -16,6 +16,7 @@ var _offer_deadline_msec: int = 0
 var _buffs_shown_hash: int = 0
 var _local_prog: Dictionary = {}
 var _local_prog_level: int = 0
+var rescue_label: Label ## Этап 4.1: прогресс спасения союзника локальным игроком
 
 @onready var giga_label: Label = $TopCenter/GigaLabel
 @onready var giga_health_back: ColorRect = $TopCenter/GigaHealthBack
@@ -71,6 +72,12 @@ func _ready() -> void:
 	debug_label.offset_top = 64.0
 	debug_label.offset_bottom = 110.0
 	add_child(debug_label)
+	rescue_label = Label.new()
+	rescue_label.name = "RescueLabel"
+	rescue_label.visible = false
+	rescue_label.add_theme_font_size_override("font_size", 16)
+	rescue_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
+	local_state_label.get_parent().add_child(rescue_label)
 	upgrade_panel.visible = false
 	shop_panel.visible = false
 	ready_check.toggled.connect(_on_ready_toggled)
@@ -187,10 +194,25 @@ func _update_local() -> void:
 	var h := _pawn.health
 	local_health_fill.offset_right = local_health_back.size.x * h.health_factor()
 	if _pawn.state == PlayerPawn.State.DOWN:
-		local_state_label.text = "ВЫ ПОВЕРЖЕНЫ — источник возрождает вас..."
+		local_state_label.text = "ВЫ ПОВЕРЖЕНЫ — %.1f с до эвакуации; союзник рядом поднимет вас (R)" % maxf(_pawn.sync_down_timer, 0.0)
 		local_state_label.modulate = Color(1.0, 0.5, 0.5)
 	else:
 		local_state_label.text = ""
+	_update_rescue_label()
+
+## Этап 4.1: локальный игрок как спасатель — прогресс канала на цели.
+func _update_rescue_label() -> void:
+	if rescue_label == null:
+		return
+	var target: PlayerPawn = null
+	for n in get_tree().get_nodes_in_group("player_pawns"):
+		var p := n as PlayerPawn
+		if p != null and p.sync_rescuer_peer == Net.my_id() and p.state == PlayerPawn.State.DOWN:
+			target = p
+			break
+	rescue_label.visible = target != null
+	if target != null:
+		rescue_label.text = "Спасение %s: %d%% — удерживайте R" % [target.player_name, int(target.sync_rescue_progress * 100.0)]
 
 func _update_wave() -> void:
 	if _mc == null:

@@ -73,6 +73,23 @@ var _prev_attack_pressed := false
 var _prev_skill_pressed := false
 var _prev_parry_pressed := false
 
+## Этап 4.1 — кооперативное спасение поверженных. Канал спасения живёт на
+## ПОВЕРЖЕННОМ (целевом) pawn и ведётся только сервером (авторитет).
+const RESCUE_RADIUS: float = 2.4
+const RESCUE_TIME: float = 2.5
+const RESCUE_HEALTH_FACTOR: float = 0.45
+const RESCUE_PROTECT_SEC: float = 1.5
+var _rescue_rescuer_peer: int = 0
+var _rescue_holding: bool = false
+var _rescue_progress: float = 0.0
+var _local_rescue_target: PlayerPawn = null ## намерение локального удержания interact
+var _rescue_req_left: float = 0.0 ## троттлинг самолечения удержания (повторный запрос)
+## Реплицируемые поля для HUD/индикатора (сервер пишет напрямую, клиент — из снапшотов).
+var sync_down_timer: float = -1.0
+var sync_rescue_progress: float = 0.0
+var sync_rescuer_peer: int = 0
+var down_indicator: Label3D
+
 @onready var health: HealthComponent = $Health
 @onready var hitbox: HitboxComponent = $Hitbox
 @onready var kb: KnockbackComponent = $Knockback
@@ -108,6 +125,7 @@ func _ready() -> void:
 	if hb_shape != null:
 		_hitbox_base_scale = hb_shape.scale
 	_update_name_label()
+	_build_down_indicator()
 	_rebuild_visuals()
 	if is_local_pawn():
 		camera_rig.activate_for(self)
@@ -323,6 +341,7 @@ func get_health() -> HealthComponent:
 # ------------------------------------------------------------------ ввод
 
 func _physics_process(delta: float) -> void:
+	_update_down_indicator()
 	if Net.is_server():
 		if (is_local_pawn() or not Net.is_online()) and state != State.DOWN:
 			_consume_local_input()
@@ -339,6 +358,7 @@ func _sample_input() -> Dictionary:
 		"press_dodge": false,
 		"press_skill": false,
 		"press_parry": false,
+		"hold_interact": false,
 	}
 	if external_input != null:
 		var e: Dictionary = external_input
@@ -348,6 +368,7 @@ func _sample_input() -> Dictionary:
 		result["press_dodge"] = bool(e.get("press_dodge", false))
 		result["press_skill"] = bool(e.get("press_skill", false))
 		result["press_parry"] = bool(e.get("press_parry", false))
+		result["hold_interact"] = bool(e.get("hold_interact", false))
 		return result
 	var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var cam_yaw := 0.0
@@ -362,6 +383,7 @@ func _sample_input() -> Dictionary:
 	result["press_dodge"] = Input.is_action_just_pressed("dodge")
 	result["press_skill"] = Input.is_action_just_pressed("skill")
 	result["press_parry"] = Input.is_action_just_pressed("parry")
+	result["hold_interact"] = Input.is_action_pressed("interact")
 	return result
 
 func _mouse_aim_yaw() -> float:
@@ -398,6 +420,7 @@ func _client_send_input() -> void:
 	var parry_pressed: bool = s["press_parry"]
 	if parry_pressed and not _prev_parry_pressed:
 		sv_request_action.rpc_id(1, "parry")
+	_update_rescue_intent(bool(s["hold_interact"]))
 	_prev_attack_pressed = attack_pressed
 	_prev_skill_pressed = skill_pressed
 	_prev_parry_pressed = parry_pressed
@@ -417,6 +440,7 @@ func _consume_local_input() -> void:
 	var parry_pressed: bool = s["press_parry"]
 	if parry_pressed and not _prev_parry_pressed:
 		try_parry()
+	_update_rescue_intent(bool(s["hold_interact"]))
 	_prev_attack_pressed = attack_pressed
 	_prev_skill_pressed = skill_pressed
 	_prev_parry_pressed = parry_pressed
@@ -663,6 +687,10 @@ func _do_chain_attack(primary: Node, base_amount: float) -> void:
 		fx_chain.rpc()
 
 func _server_sim(delta: float) -> void:
+	if state != State.DOWN:
+		sync_down_timer = -1.0
+		sync_rescue_progress = 0.0
+		sync_rescuer_peer = 0
 	_attack_cd_left = maxf(0.0, _attack_cd_left - delta)
 	_dodge_cd_left = maxf(0.0, _dodge_cd_left - delta)
 	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
@@ -676,6 +704,10 @@ func _server_sim(delta: float) -> void:
 
 	if state == State.DOWN:
 		_respawn_left -= delta
+		_tick_rescue_channel(delta)
+		sync_down_timer = _respawn_left
+		sync_rescue_progress = _rescue_progress
+		sync_rescuer_peer = _rescue_rescuer_peer
 		_ctrl_vel = Vector3.ZERO
 		var kb_down := kb.consume(delta)
 		velocity.x = kb_down.x
@@ -684,7 +716,9 @@ func _server_sim(delta: float) -> void:
 		if kb_down.y > 0.0 and is_on_floor():
 			velocity.y = kb_down.y
 		move_and_slide()
-		if _respawn_left <= 0.0:
+		## Завершившееся спасение меняет state внутри тика канала — эвакуация
+		## в том же кадре исключена (иначе телепорт поверх возрождения на месте).
+		if state == State.DOWN and _respawn_left <= 0.0:
 			_respawn()
 		return
 
@@ -817,6 +851,11 @@ func _on_died(dmg: Dictionary) -> void:
 	_parry_guard_until_msec = 0
 	_empower_mult = 1.0
 	_phantom_queue.clear()
+	## Поверженный не может сам кого-то спасать: намерение гаснет (канал на нём
+	## как на спасателе отменит серверный тик цели по состоянию DOWN).
+	if _local_rescue_target != null and is_instance_valid(_local_rescue_target):
+		_send_rescue_hold(_local_rescue_target, false)
+	_local_rescue_target = null
 	kb.apply(dmg.get("knockback_dir", Vector3.FORWARD), 4.0, 1.0)
 	get_tree().call_group(&"match_controller", "register_down", owner_peer)
 	fx_down.rpc()
@@ -828,6 +867,8 @@ func _respawn() -> void:
 func revive_now(health_factor: float) -> void:
 	if not Net.is_server():
 		return
+	_clear_rescue_channel(false)
+	_local_rescue_target = null
 	var spawn_points := get_tree().get_nodes_in_group("player_spawn_points")
 	if spawn_points.size() > 0:
 		var m: Marker3D = spawn_points[Game.next_rand() % spawn_points.size()]
@@ -841,6 +882,187 @@ func revive_now(health_factor: float) -> void:
 	_ctrl_vel = Vector3.ZERO
 	fx_respawn.rpc()
 
+# ------------------------------------------------------------------ спасение (Этап 4.1)
+
+func _build_down_indicator() -> void:
+	down_indicator = Label3D.new()
+	down_indicator.name = "DownIndicator"
+	down_indicator.pixel_size = 0.005
+	down_indicator.billboard = 1
+	down_indicator.no_depth_test = true
+	down_indicator.font_size = 34
+	down_indicator.modulate = Color(1.0, 0.5, 0.55)
+	down_indicator.position = Vector3(0.0, 2.62, 0.0)
+	down_indicator.visible = false
+	add_child(down_indicator)
+
+## Индикатор поверженного состояния над пешкой (виден всем пирам): таймер до
+## эвакуации и прогресс спасения. Значения — серверные локально, реплика иначе.
+func _update_down_indicator() -> void:
+	if down_indicator == null:
+		return
+	var downed := state == State.DOWN
+	down_indicator.visible = downed
+	if not downed:
+		return
+	var t := _respawn_left if Net.is_server() else sync_down_timer
+	var rp := _rescue_progress if Net.is_server() else sync_rescue_progress
+	var rr := _rescue_rescuer_peer if Net.is_server() else sync_rescuer_peer
+	var txt := "ПОВЕРЖЕН• %.1f с" % maxf(t, 0.0)
+	if rr > 0:
+		txt += " | Спасают: %d%%" % int(rp * 100.0)
+	else:
+		txt += " | Союзник: держи R"
+	down_indicator.text = txt
+
+func _pawn_of_peer(peer: int) -> PlayerPawn:
+	for n in get_tree().get_nodes_in_group("player_pawns"):
+		var p := n as PlayerPawn
+		if p != null and p.owner_peer == peer:
+			return p
+	return null
+
+func _nearest_downed_ally() -> PlayerPawn:
+	var best: PlayerPawn = null
+	var bd := 1e9
+	for n in get_tree().get_nodes_in_group("player_pawns"):
+		var p := n as PlayerPawn
+		if p == null or p == self or p.state != State.DOWN:
+			continue
+		var d := global_position.distance_to(p.global_position)
+		if d < bd and d <= RESCUE_RADIUS:
+			bd = d
+			best = p
+	return best
+
+## Краевая логика удержания interact: выбор ближайшей цели и старт/стоп канала.
+## Вызывается и на клиенте (шлёт RPC), и на серверной локальной ветке.
+func _update_rescue_intent(hold: bool) -> void:
+	if not is_local_pawn() and external_input == null:
+		return ## нет источника ввода (соседние пешки offline/тестов): канал не трогаем
+	if state == State.DOWN or health.is_dead:
+		hold = false
+	var target: PlayerPawn = null
+	if hold:
+		target = _nearest_downed_ally()
+	if target == _local_rescue_target:
+		## Самолечение удержания: если сервер сбросил канал (атака/рывок спасателя
+		## в момент открытия), а кнопка всё ещё держится — повторный запрос.
+		## При занятном чужом канале не спамим: чужое спасение не перебиваем.
+		if hold and target != null:
+			var channel_free: bool
+			var mine: bool
+			if Net.is_server():
+				mine = target._rescue_rescuer_peer == owner_peer
+				channel_free = target._rescue_rescuer_peer == 0 or mine
+			else:
+				mine = target.sync_rescuer_peer == Net.my_id()
+				channel_free = target.sync_rescuer_peer == 0 or mine
+			if channel_free and not mine:
+				_rescue_req_left -= get_physics_process_delta_time()
+				if _rescue_req_left <= 0.0:
+					_rescue_req_left = 0.3
+					_send_rescue_hold(target, true)
+			elif not channel_free and not mine:
+				pass ## канал занят другим спасателем — ждём
+		return
+	if _local_rescue_target != null and is_instance_valid(_local_rescue_target):
+		_send_rescue_hold(_local_rescue_target, false)
+	_local_rescue_target = target
+	if target != null:
+		_send_rescue_hold(target, true)
+
+func _send_rescue_hold(target: PlayerPawn, v: bool) -> void:
+	if Net.is_online():
+		target.sv_rescue_hold.rpc_id(1, v)
+	elif Net.is_server():
+		target.server_rescue_hold_by_peer(owner_peer, v)
+
+## RPC клиента-спасателя. Валидация отправителя: только владелец живой пешки,
+## не сам поверженный; цель обязана быть в DOWN. Повторные/чужие запросы
+## отклоняются без побочных эффектов.
+@rpc("any_peer", "call_remote", "reliable")
+func sv_rescue_hold(holding: bool) -> void:
+	if not Net.is_server() or not is_inside_tree():
+		return
+	server_rescue_hold_by_peer(multiplayer.get_remote_sender_id(), holding)
+
+## Серверный вход канала спасения (RPC и тесты). Возврат true = запрос принят.
+func server_rescue_hold_by_peer(sender: int, holding: bool) -> bool:
+	if not Net.is_server() or not is_inside_tree():
+		return false
+	if state != State.DOWN or sender == owner_peer or sender <= 0:
+		return false
+	var rescuer := _pawn_of_peer(sender)
+	if rescuer == null or rescuer.health.is_dead or rescuer.state == State.DOWN:
+		return false
+	if holding:
+		if _rescue_rescuer_peer != 0 and _rescue_rescuer_peer != sender:
+			return false ## канал уже открыт другим — параллельные спасения запрещены
+		if rescuer.global_position.distance_to(global_position) > RESCUE_RADIUS:
+			return false
+		if _rescue_rescuer_peer == 0:
+			_rescue_rescuer_peer = sender
+			_rescue_progress = 0.0
+			fx_rescue_start.rpc(sender)
+		_rescue_holding = true
+	else:
+		if _rescue_rescuer_peer == sender:
+			_clear_rescue_channel(true)
+	return true
+
+## Серверный тик канала: проверка условий и накопление прогресса.
+func _tick_rescue_channel(delta: float) -> void:
+	if _rescue_rescuer_peer == 0:
+		return
+	var rescuer := _pawn_of_peer(_rescue_rescuer_peer)
+	var valid := is_instance_valid(rescuer) \
+		and not rescuer.health.is_dead \
+		and rescuer.state != State.DOWN \
+		and rescuer.state != State.ATTACK \
+		and rescuer.state != State.SKILL \
+		and rescuer.state != State.DODGE \
+		and _rescue_holding \
+		and rescuer.global_position.distance_to(global_position) <= RESCUE_RADIUS
+	if not valid:
+		_clear_rescue_channel(true)
+		return
+	_rescue_progress += delta / RESCUE_TIME
+	if _rescue_progress >= 1.0:
+		_rescue_progress = 1.0
+		_server_complete_rescue(rescuer)
+
+func _clear_rescue_channel(announce: bool) -> void:
+	if _rescue_rescuer_peer == 0:
+		return
+	var rpeer := _rescue_rescuer_peer
+	_rescue_rescuer_peer = 0
+	_rescue_holding = false
+	_rescue_progress = 0.0
+	if announce:
+		fx_rescue_cancelled.rpc(rpeer)
+
+## Завершение: возрождение НА МЕСТЕ (позиция сохраняется), частичное HP и
+## короткая защита от мгновенного повторного поражения. Однократно.
+func _server_complete_rescue(rescuer: PlayerPawn) -> void:
+	var rpeer := _rescue_rescuer_peer
+	_rescue_rescuer_peer = 0
+	_rescue_holding = false
+	_rescue_progress = 0.0
+	health.setup(effective_max_health() * RESCUE_HEALTH_FACTOR)
+	health.grant_invulnerability(RESCUE_PROTECT_SEC)
+	kb.cancel()
+	_respawn_left = 0.0
+	state = State.IDLE
+	_state_time = 0.0
+	velocity = Vector3.ZERO
+	_ctrl_vel = Vector3.ZERO
+	sync_down_timer = -1.0
+	sync_rescue_progress = 0.0
+	sync_rescuer_peer = 0
+	fx_rescued.rpc(rpeer)
+	print("[PlayerPawn] СПАСЕНИЕ: peer %d поднят союзником peer %d (%.0f hp)" % [owner_peer, rpeer, health.health])
+
 # ------------------------------------------------------------------ репликация
 
 func get_sync_payload() -> Dictionary:
@@ -853,6 +1075,9 @@ func get_sync_payload() -> Dictionary:
 		"dead": health.is_dead,
 		"aid": attack_id,
 		"f": form_index,
+		"bt": snapped(_respawn_left, 0.1) if state == State.DOWN else -1.0,
+		"rp": snapped(_rescue_progress, 0.02),
+		"rr": _rescue_rescuer_peer,
 	}
 
 func apply_sync_payload(payload: Dictionary) -> void:
@@ -872,6 +1097,9 @@ func apply_sync_payload(payload: Dictionary) -> void:
 	if new_aid != attack_id:
 		attack_id = new_aid
 		Events.sync_attack_started.emit(self)
+	sync_down_timer = float(payload.get("bt", -1.0))
+	sync_rescue_progress = float(payload.get("rp", 0.0))
+	sync_rescuer_peer = int(payload.get("rr", 0))
 	var new_form := int(payload.get("f", form_index))
 	if new_form != form_index:
 		_set_form_replicated(new_form)
@@ -966,6 +1194,30 @@ func fx_parry_success() -> void:
 		visuals.play_parry_success()
 	if is_local_pawn():
 		Events.local_announcement.emit("Парирование! Следующая атака усилена", 1.2)
+
+## Спасение (Этап 4.1): локальная косметика/события HUD на каждом пире.
+@rpc("authority", "call_local", "reliable")
+func fx_rescue_start(rescuer_peer: int) -> void:
+	Sfx.play("ui", -6.0)
+	Events.rescue_started.emit(self, rescuer_peer)
+	if is_local_pawn() or rescuer_peer == Net.my_id():
+		Events.local_toast.emit("Спасение начато: удерживайте R", "info")
+
+@rpc("authority", "call_local", "reliable")
+func fx_rescue_cancelled(rescuer_peer: int) -> void:
+	Events.rescue_cancelled.emit(self, rescuer_peer)
+	if is_local_pawn() or rescuer_peer == Net.my_id():
+		Events.local_toast.emit("Спасение прервано", "bad")
+
+@rpc("authority", "call_local", "reliable")
+func fx_rescued(rescuer_peer: int) -> void:
+	VisualFx.ring_burst(global_position, Color(0.6, 1.0, 0.75), 3.2)
+	Sfx.play("evolve", -10.0)
+	Events.rescue_completed.emit(self, rescuer_peer)
+	if is_local_pawn():
+		Events.local_announcement.emit("Вас поднял союзник!", 2.0)
+	elif rescuer_peer == Net.my_id():
+		Events.local_announcement.emit("Союзник спасён: %s" % player_name, 2.0)
 
 @rpc("authority", "call_local", "unreliable")
 func fx_phantom() -> void:

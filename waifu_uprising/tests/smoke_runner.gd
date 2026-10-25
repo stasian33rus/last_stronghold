@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_data_layers()
 	await _test_full_match_flow()
 	await _test_defeat_and_down_flow()
+	await _test_rescue_flow()
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
@@ -1313,3 +1314,116 @@ func _test_destructibles() -> void:
 	var dev_after := _path_max_lateral(Vector3(5.5, 0.2, -14.0), Vector3(5.5, 0.2, 2.0), 5.5)
 	_check(dev_after < dev_before and dev_after < 0.6,
 		"NavMesh перепечён: путь сквозь бывший ящик выпрямился (%.2f -> %.2f)" % [dev_before, dev_after])
+
+## Этап 4.1: кооперативное спасение поверженных (offline, серверная ветка).
+func _test_rescue_flow() -> void:
+	var arena := get_tree().current_scene
+	var sys := _prog()
+	if sys == null or not arena.has_method("spawn_player"):
+		_check(false, "Спасение: арена и ProgressionSystem доступны")
+		return
+	var pa: PlayerPawn = arena.spawn_player(781, "Спас-А", &"berserk", Vector3(-12.0, 0.2, -12.0))
+	var pb: PlayerPawn = arena.spawn_player(782, "Спас-Б", &"berserk", Vector3(-12.0, 0.2, -10.4))
+	var pc: PlayerPawn = arena.spawn_player(783, "Спас-В", &"berserk", Vector3(-8.0, 0.2, -12.0))
+	for peer in [781, 782, 783]:
+		var stt := ProgressionState.new()
+		stt.peer_id = peer
+		sys.states[peer] = stt
+	await _frames(4)
+	if pa == null or pb == null or pc == null:
+		_check(false, "Спасение: три пробные пешки заспавнены")
+		return
+	_check(true, "Спасение: три пробные пешки заспавнены (781/782/783)")
+	var dmg := func(target: PlayerPawn) -> void:
+		target.health.take_damage(Units.make_damage(9999.0, null, 0, Vector3.FORWARD, 1.0, target.global_position))
+
+	## 1. Переход в DOWNED при нулевом HP + индикатор.
+	dmg.call(pa)
+	await _frames(2)
+	_check(pa.state == PlayerPawn.State.DOWN and pa.health.is_dead, "Спасение: нулевое HP переводит в DOWN")
+	_check(pa.down_indicator != null and pa.down_indicator.visible, "Спасение: индикатор поверженного состояния виден")
+
+	## 2. Запрет боевых действий в DOWN.
+	pa.try_attack()
+	pa.try_skill()
+	pa.try_parry()
+	pa.try_dodge()
+	await _frames(2)
+	_check(pa.state == PlayerPawn.State.DOWN, "Спасение: атака/умение/парирование/рывок в DOWN запрещены")
+
+	## 3. Некорректные запросы отклоняются (само-спасение, чужой/несуществующий peer).
+	_check(pa.server_rescue_hold_by_peer(781, true) == false, "Спасение: само-спасение отклонено")
+	_check(pa.server_rescue_hold_by_peer(999, true) == false, "Спасение: запрос несуществующего peer отклонён")
+
+	## 4. Успешное спасение союзником: прогресс и возрождение на месте.
+	var pos_before := pa.global_position
+	_check(pa.server_rescue_hold_by_peer(782, true) == true, "Спасение: канал открыт сервером (peer 782)")
+	await _frames(4)
+	_check(pa.sync_rescuer_peer == 782 or pa.get("_rescue_rescuer_peer") == 782, "Спасение: цель знает спасателя")
+	var rescued: bool = await _wait_until(func(): return pa.state != PlayerPawn.State.DOWN, 6.0)
+	_check(rescued, "Спасение: союзник поднял поверженного до истечения таймера")
+	_check(is_equal_approx(pa.health.health, pa.effective_max_health() * 0.45),
+			"Спасение: HP восстановлено до 45%% максимума (%.0f)" % pa.health.health)
+	_check(pa.global_position.distance_to(pos_before) < 0.75, "Спасение: возрождение на месте падения (без телепорта)")
+
+	## 5. Однократность восстановления и повторные RPC после подъёма.
+	var hp_after := pa.health.health
+	await _seconds(0.4)
+	_check(is_equal_approx(pa.health.health, hp_after), "Спасение: восстановление HP ровно один раз")
+	_check(pa.server_rescue_hold_by_peer(782, true) == false, "Спасение: повторный RPC по живой цели отклонён")
+
+	## 5б. Полный вводный конвейер: удержание interact через external_input.
+	await _seconds(1.7) ## защита после спасения (1.5 с) должна истечь
+	dmg.call(pa)
+	await _frames(2)
+	pc.global_position = pa.global_position + Vector3(1.0, 0.0, 0.0)
+	await _frames(2)
+	pc.external_input = {"hold_interact": true, "move": Vector2.ZERO}
+	await _frames(4)
+	print("[DBG] 5b: pa.state=%d dist_pc=%.2f channel=%d holding=%s pb_state=%d" % [
+		pa.state, pc.global_position.distance_to(pa.global_position),
+		int(pa.get("_rescue_rescuer_peer")), str(pa.get("_rescue_holding")), pb.state])
+	_check(pa.get("_rescue_rescuer_peer") == 783, "Спасение: канал открыт удержанием внешнего ввода (783)")
+	pc.external_input = {"hold_interact": false, "move": Vector2.ZERO}
+	await _frames(4)
+	_check(pa.get("_rescue_rescuer_peer") == 0 and pa.state == PlayerPawn.State.DOWN,
+			"Спасение: канал отменён отпусканием удержания")
+	pc.external_input = null
+
+	## 6. Параллельные каналы на одну цель запрещены + отмена по дистанции.
+	await _seconds(1.7)
+	dmg.call(pa)
+	await _frames(2)
+	_check(pa.server_rescue_hold_by_peer(782, true) == true, "Спасение: второй канал открыт (782)")
+	_check(pa.server_rescue_hold_by_peer(783, true) == false, "Спасение: параллельный канал второго спасателя отклонён")
+	pb.global_position = Vector3(30.0, 0.2, 30.0)
+	await _frames(6)
+	_check(pa.get("_rescue_rescuer_peer") == 0 and pa.state == PlayerPawn.State.DOWN,
+			"Спасение: канал отменён при выходе спасателя из радиуса")
+	pa.server_rescue_hold_by_peer(782, false)
+
+	## 7. Гибель спасателя отменяет канал.
+	pb.global_position = Vector3(-12.0, 0.2, -10.4)
+	await _frames(2)
+	_check(pa.server_rescue_hold_by_peer(782, true) == true, "Спасение: канал открыт повторно (782)")
+	await _frames(3)
+	dmg.call(pb)
+	await _frames(6)
+	_check(pa.get("_rescue_rescuer_peer") == 0 and pa.state == PlayerPawn.State.DOWN,
+			"Спасение: канал отменён после падения спасателя")
+	pb.revive_now(1.0)
+
+	## 8. Одиночный режим: без спасателей таймер доводит до штатной эвакуации.
+	var expired: bool = await _wait_until(func(): return pa.state != PlayerPawn.State.DOWN, 9.0)
+	_check(expired and pa.get("_rescue_rescuer_peer") == 0,
+			"Спасение: соло-режим — истечение таймера даёт штатное возрождение (не бесконечный DOWN)")
+	await _frames(2)
+	_check(pa.down_indicator != null and not pa.down_indicator.visible, "Спасение: индикатор скрыт после подъёма")
+
+	## 9. Гасим каналы и убираем пробные пешки, чтобы не влиять на последующие учёты.
+	pa.server_rescue_hold_by_peer(782, false)
+	for pawn in [pa, pb, pc]:
+		if is_instance_valid(pawn):
+			pawn.queue_free()
+	await _frames(3)
+	_check(true, "Спасение: пробные пешки освобождены")

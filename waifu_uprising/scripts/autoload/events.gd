@@ -36,3 +36,8 @@ signal upgrade_offer_closed
 signal shop_result_msg(ok: bool, text: String)
 ## Межволновая фаза: обновлённый список ready (peer_id -> bool) — для HUD.
 signal wave_ready_state_changed(states: Dictionary)
+
+## Этап 4.1: кооперативное спасение поверженных союзников.
+signal rescue_started(target: Node, rescuer_peer: int)
+signal rescue_cancelled(target: Node, rescuer_peer: int)
+signal rescue_completed(target: Node, rescuer_peer: int)
