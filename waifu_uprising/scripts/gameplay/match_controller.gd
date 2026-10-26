@@ -34,6 +34,10 @@ var _progression: Node = null
 var _wave_complete_left: float = 0.0
 var _fights_started: int = 0
 var _last_wave_alive: Array = []
+## Акт II (Этап 5.2): сопровождение кортежа. Победа — транспорт достиг конечной
+## точки, поражение — транспорт уничтожен (или Гигачад-груз повержен).
+var _transport: ConvoyTransport = null
+var _convoy_director: ConvoyDirector = null
 
 signal phase_changed_local(new_phase: int)
 
@@ -48,6 +52,12 @@ func _ready() -> void:
 	var gigas := get_tree().get_nodes_in_group("gigachad")
 	if gigas.size() > 0:
 		_gigachad = gigas[0] as GigaChad
+	var ts := get_tree().get_nodes_in_group("convoy_transport")
+	if ts.size() > 0:
+		_transport = ts[0] as ConvoyTransport
+	var cds := get_tree().get_nodes_in_group("convoy_director")
+	if cds.size() > 0:
+		_convoy_director = cds[0] as ConvoyDirector
 	if Net.is_server():
 		_setup_server()
 
@@ -76,6 +86,12 @@ func _setup_server() -> void:
 	_mark_scene_ready(1)
 	if _gigachad != null:
 		_gigachad.defeated.connect(_on_gigachad_defeated)
+	## Акт II: исход матча определяют события транспорта (сервер-authoritative).
+	if _transport != null:
+		_transport.arrived.connect(_on_transport_arrived)
+		_transport.destroyed.connect(_on_transport_destroyed)
+	if _convoy_director != null:
+		_convoy_director.enemy_spawned.connect(_on_enemy_spawned)
 	if not Net.is_online():
 		_begin_countdown()
 
@@ -134,6 +150,9 @@ func _process(delta: float) -> void:
 						_wave_manager.start_waves()
 					else:
 						_wave_manager.start_next_wave()
+				elif _convoy_director != null and _fights_started == 1:
+					## Акт II: старт спавна рейдеров по прогрессу маршрута.
+					_convoy_director.start_convoy()
 		Phase.FIGHT:
 			match_time += delta
 			_tick_state_broadcast(delta)
@@ -167,6 +186,10 @@ func _broadcast_state() -> void:
 		wave_number = _wave_manager.current_wave
 		enemies_alive = _wave_manager.enemies_alive
 		enemies_left_total = _wave_manager.enemies_alive + _wave_manager.enemies_in_queue
+	elif _convoy_director != null:
+		## Акт II: вместо волн — живые рейдеры и очередь директора кортежа.
+		enemies_alive = _convoy_director.enemies_alive
+		enemies_left_total = _convoy_director.enemies_alive + _convoy_director.pending_count()
 	if Net.is_online():
 		cl_state.rpc(wave_number, waves_total, enemies_left_total, enemies_alive, countdown, match_time, phase)
 	else:
@@ -269,13 +292,37 @@ func _on_gigachad_defeated() -> void:
 		return
 	_end_match(Phase.DEFEAT)
 
+## Акт II (Этап 5.2): транспорт доехал до точки эвакуации — победа.
+func _on_transport_arrived() -> void:
+	if not Net.is_server():
+		return
+	if phase == Phase.VICTORY or phase == Phase.DEFEAT:
+		return
+	_end_match(Phase.VICTORY)
+
+## Акт II: транспорт уничтожен — поражение (как смерть Гигачада в Акте I).
+func _on_transport_destroyed() -> void:
+	if not Net.is_server():
+		return
+	if phase == Phase.VICTORY or phase == Phase.DEFEAT:
+		return
+	_end_match(Phase.DEFEAT)
+
 func _end_match(result_phase: int) -> void:
 	phase = result_phase
 	## Спавн волн немедленно прекращается (никаких врагов после победы/поражения).
 	if _wave_manager != null:
 		_wave_manager.stop_waves()
+	if _convoy_director != null:
+		_convoy_director.stop_spawning()
 	## Снаряды корректно удаляются при завершении матча.
 	get_tree().call_group(&"projectiles", "expire_now")
+	## Этап 5.2: после финала прекращаются и атаки — живые враги фиксируются
+	## в стаггере (hitbox деактивирован), урон героям и транспорту невозможен.
+	for n in get_tree().get_nodes_in_group("enemy_units"):
+		var foe := n as EnemyBase
+		if foe != null and not foe.health.is_dead and foe.state != EnemyBase.State.DEAD:
+			foe.apply_external_stun(999.0)
 	_broadcast_state()
 	print("[Match] Матч завершён: %s, время %.1f с" % ["ПОБЕДА" if result_phase == Phase.VICTORY else "ПОРАЖЕНИЕ", match_time])
 	if Net.is_online():

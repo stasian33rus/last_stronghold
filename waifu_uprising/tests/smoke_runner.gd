@@ -30,6 +30,7 @@ func _run() -> void:
 	await _test_physics_flow()
 	await _test_env_flow()
 	await _test_act1_flow()
+	await _test_act2_flow()
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
@@ -1771,3 +1772,292 @@ func _test_act1_flow() -> void:
 	var buy_blocked := prog == null or prog.try_buy(1, &"potion_small") == false
 	var no_new_foes := _alive_enemies().is_empty()
 	_check(buy_blocked and no_new_foes, "Акт I: после финала покупки и спавн врагов заблокированы")
+
+# ------------------------------------------------------------------ Акт II (Этап 5.2)
+
+func _convoy() -> ConvoyTransport:
+	for n in get_tree().get_nodes_in_group("convoy_transport"):
+		var t := n as ConvoyTransport
+		if t != null:
+			return t
+	return null
+
+func _director() -> ConvoyDirector:
+	for n in get_tree().get_nodes_in_group("convoy_director"):
+		var d := n as ConvoyDirector
+		if d != null:
+			return d
+	return null
+
+## Этап 5.2: сопровождение энергетического кортежа — маршрут/контрольные точки,
+## блокировка и атаки врагов, серверный ремонт (один раз на подтверждённое
+## действие, дубликаты событий не повторяют награду/ремонт), победа по
+## достижении конечной точки, поражение по нулю HP, блокировки после финала,
+## очистка состояния при повторном матче.
+func _test_act2_flow() -> void:
+	Game.start_offline_act2(&"berserk", "Акт-2")
+	await _frames(3)
+	var mc := _match()
+	var t := _convoy()
+	if mc == null or t == null:
+		_check(false, "Акт II: матч сопровождения стартовал")
+		return
+	_check(true, "Акт II: матч сопровождения стартовал")
+	## Детерминизм: резонанс груза-Гигачада не расталкивает врагов во время проверок.
+	var cargo := _giga()
+	if cargo != null:
+		cargo.resonance_rate = 0.0
+	var fight: bool = await _wait_until(func(): return _match() != null and _match().phase == MatchController.Phase.FIGHT, 12.0)
+	_check(fight, "Акт II: фаза FIGHT — кортеж тронулся")
+	var pawn := _local_pawn()
+	_check(pawn != null, "Акт II: пешка игрока заспавнена у кортежа")
+	var prog := _prog()
+	var st1: ProgressionState = prog.states.get(1) if prog != null else null
+	_check(st1 != null, "Акт II: состояние прогрессии создано")
+
+	## --- 1. Транспорт движется по маршруту (сервер), HP полный, прогресс растёт.
+	_check(t.health.health == t.health.max_health, "Акт II: транспорт стартует с полным запасом прочности (%.0f)" % t.health.max_health)
+	var d0 := t.route_distance
+	var moved: bool = await _wait_until(func():
+		_kill_all_enemies()
+		return _convoy().route_distance > d0 + 2.0, 8.0)
+	_check(moved, "Акт II: транспорт движется по маршруту (пройдено %.1f м)" % (_convoy().route_distance - d0))
+	var hud_node := get_tree().current_scene.get_node_or_null(^"HUD")
+	_check(hud_node != null and hud_node.convoy_back != null and hud_node.convoy_back.visible \
+			and hud_node.convoy_prog_back != null,
+			"Акт II: HUD показывает здоровье и прогресс маршрута кортежа")
+
+	## --- 2. Контрольная точка: событие + короткая остановка + заряд ремонта.
+	var cp_seen: Array = []
+	t.checkpoint_reached.connect(func(i: int) -> void: cp_seen.append(i))
+	var charges0 := t.repair_charges
+	var cp_dist := t.next_checkpoint_distance() - 1.0
+	t.force_progress(cp_dist / t.total_distance)
+	var cp_ok: bool = await _wait_until(func():
+		_kill_all_enemies()
+		return cp_seen.size() > 0, 8.0)
+	_check(cp_ok, "Акт II: контрольная точка достигнута — событие отправлено (%s)" % str(cp_seen))
+	_check(t.state == ConvoyTransport.TState.CHECKPOINT or t._stop_left > 0.0,
+			"Акт II: на контрольной точке кортеж делает короткую остановку")
+	_check(t.repair_charges == charges0 + 1, "Акт II: контрольная точка выдала заряд ремонта (%d)" % t.repair_charges)
+	var resumed: bool = await _wait_until(func():
+		_kill_all_enemies()
+		return _convoy().state == ConvoyTransport.TState.MOVING, 8.0)
+	_check(resumed, "Акт II: после остановки движение возобновилось")
+
+	## --- 3. Блокировка движения: враг у транспорта останавливает кортеж.
+	_kill_all_enemies()
+	await _frames(2)
+	var arena := get_tree().current_scene
+	var rdef := load("res://resources/enemies/raider.tres") as EnemyDefinition
+	var fdef := load("res://resources/enemies/fop.tres") as EnemyDefinition
+	var blocker_probe: EnemyBase = arena.spawn_enemy(rdef, t.global_position + Vector3(1.9, 0.1, 0.0))
+	if blocker_probe != null:
+		blocker_probe.apply_external_stun(25.0) ## стоит у борта и не умирает сам
+	var blocked: bool = await _wait_until(func(): return _convoy().state == ConvoyTransport.TState.BLOCKED, 4.0)
+	var d_block := t.route_distance
+	await _seconds(0.6)
+	var stalled := is_equal_approx(t.route_distance, d_block)
+	_check(blocked and stalled, "Акт II: враг у борта блокирует движение кортежа")
+	_kill_all_enemies()
+	var unblocked: bool = await _wait_until(func(): return _convoy().state != ConvoyTransport.TState.BLOCKED \
+			and _convoy().route_distance > d_block + 0.5, 6.0)
+	_check(unblocked, "Акт II: после уничтожения угрозы кортеж снова едет")
+
+	## --- 4. ИИ выбирает транспорт: рейдер идёт к кортежу, обычный враг — к игроку.
+	_kill_all_enemies()
+	await _frames(2)
+	if pawn != null:
+		pawn.health.grant_invulnerability(35.0) ## сценарная защита: пешка жива до проверок ремонта
+	var raider: EnemyBase = arena.spawn_enemy(rdef, t.global_position + Vector3(0.0, 0.1, 9.0))
+	var targets_convoy: bool = await _wait_until(func(): return raider != null and raider._target == _convoy(), 4.0)
+	_check(targets_convoy, "Акт II: рейдер кортежа выбрал целью транспорт (а не игрока)")
+	if pawn != null:
+		var fop_probe: EnemyBase = arena.spawn_enemy(fdef, pawn.global_position + Vector3(1.5, 0.1, 0.0))
+		var targets_hero: bool = await _wait_until(func():
+			return fop_probe != null and fop_probe._target != null and fop_probe._target is PlayerPawn, 4.0)
+		_check(targets_hero, "Акт II: обычный противник по-прежнему атакует игроков")
+	## Барьер кортежа: целится в точку маршрута ВПЕРЕДИ транспорта (перекрытие пути).
+	var bdef := load("res://resources/enemies/blocker.tres") as EnemyDefinition
+	var blocker: EnemyBase = arena.spawn_enemy(bdef, t.global_position + Vector3(0.0, 0.1, 11.0))
+	await _frames(40)
+	if blocker != null and blocker._target != null:
+		var aim: Vector3 = blocker._target_position()
+		var ahead_pt: Vector3 = t.get_point_ahead(blocker.def.convoy_lead)
+		_check(aim.distance_to(ahead_pt) < 0.6, "Акт II: барьер бежит перехватывать маршрут впереди кортежа")
+	else:
+		_check(false, "Акт II: барьер бежит перехватывать маршрут впереди кортежа")
+	_kill_all_enemies()
+	await _frames(2)
+
+	## --- 5. Враги наносят урон транспорту (реальная боевая система: hitbox -> hurtbox).
+	var hp_before := t.health.health
+	var attacker: EnemyBase = arena.spawn_enemy(fdef, t.global_position + Vector3(0.0, 0.1, 1.9))
+	var transport_damaged: bool = await _wait_until(func(): return _convoy().health.health < hp_before, 10.0)
+	_check(transport_damaged, "Акт II: противник повредил транспорт штатной атакой (%.0f -> %.0f HP)" % [hp_before, _convoy().health.health])
+	_kill_all_enemies()
+	await _frames(2)
+
+	## --- 6. Ремонт: серверный канал удержания interact, один ремонт на действие.
+	## Кортеж заморожен (speed 0) — «столкновение»: проверки зарядов/кулдауна
+	## детерминированы, контрольные точки не выдают лишние заряды.
+	t.move_speed = 0.0
+	t.health.take_damage(Units.make_damage(300.0, null, 0, Vector3.ZERO, 0.0, t.global_position))
+	var hp_dmg := t.health.health
+	var charges_rep := t.repair_charges
+	var keep_near := func() -> void:
+		if pawn != null and is_instance_valid(pawn) and is_instance_valid(t):
+			pawn.global_position = t.global_position + Vector3(2.4, 0.0, 0.0)
+			pawn.external_input = {"move": Vector2.ZERO, "aim_yaw": pawn.aim_yaw, "hold_interact": true}
+	keep_near.call()
+	var repaired: bool = await _wait_until(func():
+		keep_near.call()
+		_kill_all_enemies()
+		return _convoy().health.health > hp_dmg, 10.0)
+	await _frames(2)
+	_check(repaired, "Акт II: ремонт удержанием interact восстановил прочность")
+	_check(t.repair_charges == charges_rep - 1, "Акт II: ремонт списал ровно один заряд (%d)" % t.repair_charges)
+	_check(is_equal_approx(t.health.health, hp_dmg + t.repair_amount),
+			"Акт II: ремонт = одно подтверждённое действие -> ровно +%d HP (%.0f)" % [int(t.repair_amount), t.health.health])
+	## Удержание продолжается: во время кулдауна ВТОРОЙ ремонт не выполняется.
+	t.health.take_damage(Units.make_damage(120.0, null, 0, Vector3.ZERO, 0.0, t.global_position))
+	var hp_low := t.health.health
+	var early_second := false
+	var held := 0.0
+	while held < 1.6:
+		keep_near.call()
+		_kill_all_enemies()
+		await get_tree().physics_frame
+		held += 1.0 / 60.0
+		if t.health.health > hp_low + 0.5:
+			early_second = true
+	_check(not early_second, "Акт II: повторное сетевое событие удержания не даёт второй ремонт (кулдаун)")
+	var second_ok: bool = await _wait_until(func():
+		keep_near.call()
+		_kill_all_enemies()
+		return _convoy().health.health > hp_low + 10.0, 10.0)
+	_check(second_ok and t.repair_charges == charges_rep - 2,
+			"Акт II: следующий ремонт возможен только после кулдауна (зарядов: %d)" % t.repair_charges)
+	## Заряды исчерпаны — ремонт невозможен (сервер не списывает и не лечит).
+	t.repair_charges = 0
+	t.health.take_damage(Units.make_damage(150.0, null, 0, Vector3.ZERO, 0.0, t.global_position))
+	var hp_zero := t.health.health
+	var held_z := 0.0
+	while held_z < 3.0:
+		keep_near.call()
+		_kill_all_enemies()
+		await get_tree().physics_frame
+		held_z += 1.0 / 60.0
+	_check(is_equal_approx(t.health.health, hp_zero), "Акт II: без зарядов ремонт не выполняется (ограничен)")
+	if pawn != null:
+		pawn.external_input = null
+
+	## --- 7. Награды за убийства: один раз, дубликаты событий не удваивают.
+	if prog != null and st1 != null:
+		var probe: EnemyBase = _spawn_probe_enemy("res://scenes/enemies/fop.tscn",
+				"res://resources/enemies/fop.tres", t.global_position + Vector3(6.0, 0.2, 0.0))
+		if probe != null:
+			prog._register_enemy(probe)
+			probe.health.take_damage(Units.make_damage(10.0, null, 1, Vector3.ZERO, 0.0, probe.global_position))
+			var coins0 := st1.coins
+			probe.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, probe.global_position))
+			await _frames(2)
+			var coins1 := st1.coins
+			_check(coins1 > coins0, "Акт II: убийство врага кортежа даёт награду (монеты %d -> %d)" % [coins0, coins1])
+			## Имитация повторного сетевого события смерти — награда НЕ удваивается.
+			prog._on_enemy_died_rewards(probe, Units.make_damage(0.0, null, 1, Vector3.ZERO, 0.0, probe.global_position))
+			await _frames(2)
+			_check(st1.coins == coins1, "Акт II: повторное событие смерти не дублирует награду")
+		else:
+			_check(false, "Акт II: убийство врага кортежа даёт награду")
+
+	## --- 8. Победа: конечная точка маршрута завершает миссию, финал всё блокирует.
+	t.move_speed = 3.2 ## вернуть ход кортежу — финальный рывок к точке эвакуации
+	_kill_all_enemies()
+	await _frames(2)
+	var survivor: EnemyBase = _spawn_probe_enemy("res://scenes/enemies/fop.tscn",
+			"res://resources/enemies/fop.tres", t.global_position + Vector3(17.0, 0.2, 4.0))
+	if survivor != null and prog != null:
+		prog._register_enemy(survivor)
+	t.force_progress(0.996)
+	var victory: bool = await _wait_until(func():
+		## У точки эвакуации директор доспавнивает последние группы — игроки
+		## зачищают их (кроме «выжившего»: он проверяет остановку атак после
+		## финала), и кортеж доходит до конца маршрута.
+		for e in _alive_enemies():
+			if e != survivor:
+				e.health.take_damage(Units.make_damage(99999.0, _local_pawn(), 1, Vector3.FORWARD, 6.0, e.global_position))
+		return _match() != null and _match().phase == MatchController.Phase.VICTORY, 10.0)
+	_check(victory, "Акт II: кортеж достиг точки эвакуации — ПОБЕДА")
+	var dir := _director()
+	_check(dir != null and not dir.active and dir.pending_count() == 0, "Акт II: после финала спавн врагов остановлен")
+	if survivor != null:
+		await _frames(3)
+		_check(survivor.state == EnemyBase.State.HITSTUN and not survivor.hitbox.is_active,
+				"Акт II: после финала атаки врагов остановлены (стаггер, hitbox выключен)")
+		if st1 != null and prog != null:
+			var coins_v := st1.coins
+			survivor.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, survivor.global_position))
+			await _frames(2)
+			_check(st1.coins == coins_v, "Акт II: после финала награды не начисляются")
+	_check(prog == null or prog.try_buy(1, &"potion_small") == false, "Акт II: магазин после финала заблокирован")
+
+	## --- 9. Повторный матч: состояние Акта II полностью сброшено.
+	var obj_victory := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+	Game.start_offline_act2(&"berserk", "Акт-2-Реванш")
+	await _frames(4)
+	var t2 := _convoy()
+	var mc2 := _match()
+	_check(mc2 != null and t2 != null and not is_instance_valid(t), "Акт II: реванш загружает свежую сцену кортежа")
+	if t2 != null:
+		_check(t2.health.health == t2.health.max_health and is_zero_approx(t2.progress_factor()),
+				"Акт II: реванш — транспорт не наследует урон/прогресс")
+		_check(t2.repair_charges == t2.repair_charges_start and is_zero_approx(t2.repair_progress),
+				"Акт II: реванш — заряды и канал ремонта сброшены")
+		var dir2 := _director()
+		_check(dir2 != null and not is_instance_valid(dir) and dir2.events_fired == 0 and not dir2.active and dir2.enemies_alive == 0,
+				"Акт II: реванш — директор кортежа сброшен (таймеры/очереди пусты)")
+	_check(_alive_enemies().is_empty(), "Акт II: реванш не наследует старых врагов")
+	var traps_fresh := true
+	for n in get_tree().get_nodes_in_group("traps"):
+		var tr := n as PulseTrap
+		if tr != null and tr.state != PulseTrap.TState.IDLE:
+			traps_fresh = false
+	_check(traps_fresh, "Акт II: реванш — ловушки в исходном состоянии")
+	await _seconds(3.0)
+	var obj_rematch := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+	_check(obj_rematch <= obj_victory + 40,
+			"Акт II: нет накопления объектов между матчами (%d -> %d)" % [obj_victory, obj_rematch])
+
+	## --- 10. Поражение: прочность транспорта 0 завершает матч, финал блокирует всё.
+	var cargo2 := _giga()
+	if cargo2 != null:
+		cargo2.resonance_rate = 0.0
+	var fight2: bool = await _wait_until(func(): return _match() != null and _match().phase == MatchController.Phase.FIGHT, 12.0)
+	_check(fight2, "Акт II: второй матч дошёл до FIGHT")
+	var t3 := _convoy()
+	var prog3 := _prog()
+	var st3: ProgressionState = prog3.states.get(1) if prog3 != null else null
+	if t3 != null:
+		var survivor3: EnemyBase = _spawn_probe_enemy("res://scenes/enemies/fop.tscn",
+				"res://resources/enemies/fop.tres", t3.global_position + Vector3(9.0, 0.2, 0.0))
+		if survivor3 != null and prog3 != null:
+			prog3._register_enemy(survivor3)
+		t3.health.take_damage(Units.make_damage(99999.0, null, 0, Vector3.ZERO, 0.0, t3.global_position))
+		var defeat: bool = await _wait_until(func(): return _match() != null and _match().phase == MatchController.Phase.DEFEAT, 5.0)
+		_check(defeat, "Акт II: прочность транспорта 0 — ПОРАЖЕНИЕ")
+		var dir3 := _director()
+		_check(dir3 != null and not dir3.active, "Акт II: после поражения спавн остановлен")
+		if survivor3 != null:
+			await _frames(3)
+			_check(survivor3.state == EnemyBase.State.HITSTUN and not survivor3.hitbox.is_active,
+					"Акт II: после поражения атаки врагов остановлены")
+			if st3 != null:
+				var coins_d := st3.coins
+				survivor3.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, survivor3.global_position))
+				await _frames(2)
+				_check(st3.coins == coins_d, "Акт II: после поражения награды не начисляются")
+	else:
+		_check(false, "Акт II: прочность транспорта 0 — ПОРАЖЕНИЕ")
+	_kill_all_enemies()
+	await _seconds(1.0)

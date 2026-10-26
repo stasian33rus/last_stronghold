@@ -40,6 +40,12 @@ func _setup_server() -> void:
 		_wave_manager = arena.get_node_or_null(^"WaveManager") as WaveManager
 	if _wave_manager != null:
 		_wave_manager.enemy_spawned.connect(_register_enemy)
+	else:
+		## Акт II (Этап 5.2): врагов спавнит директор кортежа — учёт вклада
+		## урона и наград использует ТОТ же механизм (enemy_spawned).
+		var cds := get_tree().get_nodes_in_group("convoy_director")
+		if cds.size() > 0:
+			cds[0].enemy_spawned.connect(_register_enemy)
 	## Все пиры сразу видят своё начальное состояние.
 	for peer_id in states.keys():
 		sync_to(int(peer_id))

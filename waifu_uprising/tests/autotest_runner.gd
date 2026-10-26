@@ -60,6 +60,12 @@ var _trap_seq: Array = []
 var _tr_step := 0
 var _act1_boss_seen := false
 var _act1_phase_sync := false
+## Акт II (+act2=1, Этап 5.2): транспорт виден обоим пирам, прогресс маршрута
+## и здоровье реплицируются клиенту, оба пира доходят до победы кортежа.
+var _act2_convoy_seen := false
+var _act2_progress_sync := false
+var _act2_hp_sync := false
+var _act2_host_damaged := false
 var _tr_t := 0.0
 var _rsc_progress_seen := false
 var _rsc_revived_hp := -1.0
@@ -105,7 +111,8 @@ func _physics_process(delta: float) -> void:
 			if mode == "host":
 				if Net.get_player_count() >= 2 and Net.all_clients_ready():
 					print("[AUTOTEST] host: все готовы — старт матча")
-					Net.start_match(Game.ARENA_SCENE)
+					var scene := Game.ACT2_SCENE if Game.autotest_act2 else Game.ARENA_SCENE
+					Net.start_match(scene)
 					_set_phase("match")
 			else:
 				if Net.net_state == Net.NetState.IN_MATCH:
@@ -116,6 +123,7 @@ func _physics_process(delta: float) -> void:
 			_handle_rescue_test(delta)
 			_handle_trap_test(delta)
 			_observe_act1()
+			_observe_act2()
 			_check_sync()
 
 func _set_phase(p: String) -> void:
@@ -359,6 +367,17 @@ func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 				problems.append("evolve: client's own valkyrie pawn never reached form II (%d)" % _evo_local_form)
 			if _evo_remote_form < 1:
 				problems.append("evolve: client never saw remote form change (репликация 'f')")
+	if Game.autotest_act2:
+		## Этап 5.2: победа акта II — кортеж доехал; движение и HP реплицированы.
+		if not _act2_convoy_seen:
+			problems.append("act2: convoy transport never seen")
+		if not _act2_host_damaged and mode == "host":
+			problems.append("act2: host never damaged transport (репликация HP не проверена)")
+		if mode == "client":
+			if not _act2_progress_sync:
+				problems.append("act2: client never saw convoy progress (движение не реплицируется)")
+			if not _act2_hp_sync:
+				problems.append("act2: client never saw convoy hp drop (HP не реплицируется)")
 	if not problems.is_empty():
 		_finish(false, "; ".join(problems))
 		return
@@ -389,10 +408,18 @@ func _begin_rematch() -> void:
 	_intermission_served = false
 	_offer_choice = &""
 	_offer_delay = 0.0
+	## Акт II (Этап 5.2): наблюдения кортежа сбрасываются — второй матч
+	## обязан заново показать транспорт, движение и здоровье (чистое состояние).
+	_act2_convoy_seen = false
+	_act2_progress_sync = false
+	_act2_hp_sync = false
+	_act2_host_damaged = false
 	_phase = "match"
 	_phase_t = 0.0
 	if mode == "host":
-		Net.request_rematch()
+		## Отложенно: смена сцены внутри эмиссии match_ended выбила бы остальных
+		## слушателей (HUD) из дерева до того, как они обработают результат.
+		Net.request_rematch.call_deferred()
 	else:
 		print("[AUTOTEST] client: ожидаю реванш от хоста")
 
@@ -615,3 +642,33 @@ func _observe_act1() -> void:
 	if mode == "client" and not _act1_phase_sync and boss.health.health_factor() < 0.62:
 		_act1_phase_sync = true
 		print("[AUTOTEST] BOSS_PHASE_SYNC client: hp босса реплицирован (%.0f%%)" % (boss.health.health_factor() * 100.0))
+
+## Этап 5.2: наблюдение кортежа акта II. Оба пира видят транспорт; клиент
+## видит реплицированные движение (прогресс маршрута) и здоровье. Хост в
+## середине маршрута наносит серверный урон транспорту — это гарантия, что
+## клиент наблюдает именно РЕПЛИЦИРОВАННОЕ снижение HP (а не локальное).
+func _observe_act2() -> void:
+	if not Game.autotest_act2:
+		return
+	var t: ConvoyTransport = null
+	for n in get_tree().get_nodes_in_group("convoy_transport"):
+		t = n as ConvoyTransport
+		if t != null:
+			break
+	if t == null:
+		return
+	if not _act2_convoy_seen:
+		_act2_convoy_seen = true
+		print("[AUTOTEST] CONVOY_SEEN %s: транспорт кортежа в сцене" % mode)
+	if mode == "host" and _mc != null and is_instance_valid(_mc) and _mc.phase == MatchController.Phase.FIGHT:
+		if not _act2_host_damaged and t.progress_factor() > 0.25:
+			_act2_host_damaged = true
+			t.health.take_damage(Units.make_damage(t.health.max_health * 0.18, null, 0, Vector3.ZERO, 0.0, t.global_position))
+			print("[AUTOTEST] convoy: хост повредил транспорт на %.0f%% маршрута (проверка репликации HP)" % (t.progress_factor() * 100.0))
+	if mode == "client":
+		if not _act2_progress_sync and t.progress_factor() > 0.12:
+			_act2_progress_sync = true
+			print("[AUTOTEST] CONVOY_PROGRESS client: движение реплицировано (%.0f%% маршрута)" % (t.progress_factor() * 100.0))
+		if not _act2_hp_sync and t.health.health < t.health.max_health:
+			_act2_hp_sync = true
+			print("[AUTOTEST] CONVOY_HP_SYNC client: здоровье транспорта реплицировано (%.0f%%)" % (t.health.health_factor() * 100.0))

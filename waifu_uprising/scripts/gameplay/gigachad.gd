@@ -15,6 +15,10 @@ const RESONANCE_MAX: float = 100.0
 @export var pulse_heal: float = 35.0
 @export var pulse_radius: float = 9.0
 @export var pulse_knockback: float = 11.0
+## Режим груза (Акт II, Этап 5.2): Гигачад едет на транспорте кортежа —
+## собственное движение/гравитация/отбрасывание выключены (везёт транспорт),
+## здоровье и резонанс работают штатно (импульс лечит и отбрасывает врагов).
+@export var ride_mode: bool = false
 
 ## Командные улучшения резонанса (копятся сервером из выборов игроков, Этап 2).
 var team_reso_rate_mult: float = 1.0
@@ -53,6 +57,16 @@ func _physics_process(delta: float) -> void:
 	if not Net.is_server():
 		return
 	_state_time += delta
+	if ride_mode:
+		## Груз Акта II: без движения и гравитации — позицию ведёт транспорт.
+		if state == State.IDLE:
+			resonance = minf(RESONANCE_MAX, resonance + resonance_rate * team_reso_rate_mult * delta)
+			if resonance >= RESONANCE_MAX:
+				_discharge_pulse()
+		elif state == State.PULSE and _state_time >= 0.9:
+			state = State.IDLE
+			_state_time = 0.0
+		return
 	if state == State.DOWN:
 		var kb_down := kb.consume(delta)
 		velocity.x = kb_down.x
@@ -109,7 +123,8 @@ func _apply_gravity(delta: float) -> void:
 func _on_damaged(_amount: float, damage: Dictionary) -> void:
 	if not Net.is_server() or state == State.DOWN:
 		return
-	kb.apply(damage.get("knockback_dir", Vector3.ZERO), float(damage.get("knockback_force", 0.0)) * 0.08, 12.0)
+	if not ride_mode:
+		kb.apply(damage.get("knockback_dir", Vector3.ZERO), float(damage.get("knockback_force", 0.0)) * 0.08, 12.0)
 	fx_hit.rpc(damage.get("hit_position", global_position), float(damage.get("amount", 0.0)))
 
 func _on_died(_damage: Dictionary) -> void:

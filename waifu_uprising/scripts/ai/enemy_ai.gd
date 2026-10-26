@@ -257,15 +257,29 @@ func _chase(delta: float) -> void:
 	if _target == null:
 		_decay_ctrl(delta)
 		return
-	var to_target := _target.global_position - global_position
+	var to_target := _target_position() - global_position
 	to_target.y = 0.0
 	var dist := to_target.length()
 	if dist > 0.05:
 		var dir := to_target / dist
 		_face_toward(dir, delta)
 		_chase_move(delta, _nav_move_dir(dir), dist)
-	if dist <= def.attack_range and _target_is_valid_target():
+	## Атака — по реальной дистанции до цели (для блокеров кортежа точка
+	## прицела впереди транспорта, но бьют они сам транспорт).
+	var to_real := _target.global_position - global_position
+	to_real.y = 0.0
+	if to_real.length() <= def.attack_range and _target_is_valid_target():
 		_set_state(State.WINDUP)
+
+## Точка, к которой движется преследование (Этап 5.2). По умолчанию — сама
+## цель; барьеры кортежа (convoy_lead > 0) целятся в точку маршрута впереди
+## транспорта, чтобы перекрыть ему путь.
+func _target_position() -> Vector3:
+	if _target == null or not is_instance_valid(_target):
+		return global_position
+	if def != null and def.convoy_lead > 0.0 and _target.has_method("get_point_ahead"):
+		return _target.call("get_point_ahead", def.convoy_lead)
+	return _target.global_position
 
 ## Реальная навигация: маршрут NavigationAgent3D вокруг препятствий;
 ## при отсутствии маршрута/агента — безопасный fallback на прямое движение
@@ -273,7 +287,7 @@ func _chase(delta: float) -> void:
 func _nav_move_dir(fallback: Vector3) -> Vector3:
 	if not _nav_active or _target == null:
 		return fallback
-	nav_agent.target_position = _target.global_position
+	nav_agent.target_position = _target_position()
 	if not nav_agent.is_target_reachable():
 		return fallback
 	var next := nav_agent.get_next_path_position()
@@ -326,7 +340,12 @@ func _target_is_valid_target() -> bool:
 	return true
 
 ## Ближайшая живая цель из героев (игроки и Гигачад). Лежачих игроков не бьём.
+## Рейдеры/барьеры кортежа (prefers_convoy, Этап 5.2) сначала идут к транспорту.
 func _acquire_target() -> Node3D:
+	if def != null and def.prefers_convoy:
+		var convoy := _convoy_target()
+		if convoy != null:
+			return convoy
 	var best: Node3D = null
 	var best_dist := def.aggro_radius
 	for unit in get_tree().get_nodes_in_group("hero_units"):
@@ -343,6 +362,17 @@ func _acquire_target() -> Node3D:
 			best_dist = d
 			best = n3
 	return best
+
+## Живой транспорт кортежа (цель рейдеров Ордена в Акте II).
+func _convoy_target() -> Node3D:
+	for n in get_tree().get_nodes_in_group("convoy_transport"):
+		var t := n as Node3D
+		if t == null or not is_instance_valid(t):
+			continue
+		var h := t.get_node_or_null(^"Health") as HealthComponent
+		if h != null and not h.is_dead:
+			return t
+	return null
 
 func _dir_to_target() -> Vector3:
 	if _target == null or not is_instance_valid(_target):

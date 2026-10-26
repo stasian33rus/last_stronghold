@@ -11,6 +11,7 @@ extends Control
 @onready var status_label: Label = $Center/VBox/ConnectPanel/VBox/StatusLabel
 @onready var lobby_panel: PanelContainer = $Center/VBox/LobbyPanel
 @onready var players_list: ItemList = $Center/VBox/LobbyPanel/VBox/PlayersList
+@onready var act_option: OptionButton = $Center/VBox/LobbyPanel/VBox/ActRow/ActOption
 @onready var class_option: OptionButton = $Center/VBox/LobbyPanel/VBox/Row/ClassOption
 @onready var ready_check: CheckButton = $Center/VBox/LobbyPanel/VBox/Row/ReadyCheck
 @onready var start_button: Button = $Center/VBox/LobbyPanel/VBox/Row/StartButton
@@ -37,6 +38,7 @@ func _ready() -> void:
 	Net.connection_succeeded.connect(_on_connection_succeeded)
 	Net.returned_to_menu.connect(_on_returned_to_menu)
 	_fill_classes()
+	_fill_acts()
 	_refresh_lobby()
 	if Game.autotest_mode != "" and not Game.autotest_started:
 		_start_autotest()
@@ -46,6 +48,21 @@ func _fill_classes() -> void:
 	for def in Classes.get_all():
 		class_option.add_item("%s — %s" % [def.display_name, def.id], 0)
 		class_option.set_item_metadata(class_option.item_count - 1, def.id)
+
+## Выбор акта (Этап 5.2): хост запускает матч на выбранной сцене — акт II
+## доступен сразу, без прохождения акта I.
+func _fill_acts() -> void:
+	act_option.clear()
+	act_option.add_item("Акт I — Оборона последнего источника", 0)
+	act_option.set_item_metadata(0, Game.ARENA_SCENE)
+	act_option.add_item("Акт II — Энергетический кортеж (сопровождение)", 1)
+	act_option.set_item_metadata(1, Game.ACT2_SCENE)
+
+func _selected_scene() -> String:
+	var idx := act_option.selected
+	if idx < 0:
+		return Game.ARENA_SCENE
+	return str(act_option.get_item_metadata(idx))
 
 func _selected_class_id() -> StringName:
 	var idx := class_option.selected
@@ -80,7 +97,7 @@ func _parse_port() -> int:
 
 func _on_start() -> void:
 	Sfx.play("ui")
-	Net.start_match(Game.ARENA_SCENE)
+	Net.start_match(_selected_scene())
 
 func _on_ready_toggled(value: bool) -> void:
 	Sfx.play("ui")
@@ -118,6 +135,8 @@ func _refresh_lobby() -> void:
 	var is_host := Net.is_server() and Net.is_online()
 	start_button.visible = is_host
 	start_button.disabled = Net.players.is_empty()
+	## Сцену матча выбирает хост (сервер авторитетно рассылает её в sv_start_match).
+	act_option.disabled = not is_host
 	hint_label.text = "Игроков: %d/%d · Хост начинает матч, когда все готовы" % [Net.players.size(), Net.MAX_PLAYERS]
 	## Синхронизируем локальные контролы с состоянием лобби.
 	var my := Net.my_id()

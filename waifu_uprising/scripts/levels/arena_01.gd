@@ -1,13 +1,17 @@
 extends Node3D
-## Арена Акта I «Оборона последнего источника» — вертикальный срез (Этап 1).
-## Сервер: спавнит пешки игроков и врагов через MultiplayerSpawner,
+## Скрипт боевого уровня: арена Акта I «Оборона последнего источника» (Этап 1)
+## и маршрут Акта II «Энергетический кортеж» (Этап 5.2) — общая серверная
+## обвязка. Сервер: спавнит пешки игроков и врагов через MultiplayerSpawner,
 ## ждёт подтверждения загрузки сцены от всех пиров, затем передаёт ход MatchController.
 
 @onready var spawner: MultiplayerSpawner = $MultiplayerSpawner
 @onready var match_controller: MatchController = $MatchController
-@onready var wave_manager: WaveManager = $WaveManager
-@onready var gigachad: GigaChad = $GigaChad
 @onready var nav_region: NavigationRegion3D = $NavRegion
+## Необязательные узлы: WaveManager и корневой GigaChad есть в Акте I;
+## в Акте II (кортеж, Этап 5.2) спавн ведёт ConvoyDirector, а Гигачад едет
+## грузом на транспорте — тех же имён узлов в сцене нет.
+var wave_manager: WaveManager = null
+var gigachad: GigaChad = null
 
 var _nav_rebake_pending := false
 
@@ -18,6 +22,8 @@ const MAX_PROJECTILES: int = 16
 var _projectile_count: int = 0
 
 func _ready() -> void:
+	wave_manager = get_node_or_null(^"WaveManager") as WaveManager
+	gigachad = get_node_or_null(^"GigaChad") as GigaChad
 	add_to_group("arena")
 	spawner.spawn_function = _on_spawn_request
 	if Net.is_server():

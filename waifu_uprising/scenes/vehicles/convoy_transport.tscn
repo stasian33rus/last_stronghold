@@ -1,0 +1,137 @@
+[gd_scene load_steps=18 format=3]
+
+[ext_resource type="Script" path="res://scripts/gameplay/convoy_transport.gd" id="1_convoy"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="2_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="3_health"]
+[ext_resource type="Script" path="res://scripts/networking/body_sync.gd" id="4_sync"]
+[ext_resource type="PackedScene" path="res://scenes/npcs/gigachad.tscn" id="5_giga"]
+
+[sub_resource type="BoxShape3D" id="shape_body"]
+size = Vector3(2, 1.7, 3.2)
+
+[sub_resource type="StandardMaterial3D" id="mat_steel"]
+albedo_color = Color(0.16, 0.17, 0.23, 1)
+metallic = 0.65
+roughness = 0.5
+
+[sub_resource type="BoxMesh" id="mesh_platform"]
+material = SubResource("mat_steel")
+size = Vector3(1.9, 0.3, 3)
+
+[sub_resource type="StandardMaterial3D" id="mat_side"]
+albedo_color = Color(0.11, 0.12, 0.17, 1)
+metallic = 0.55
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="mesh_side"]
+material = SubResource("mat_side")
+size = Vector3(0.14, 0.45, 3)
+
+[sub_resource type="BoxMesh" id="mesh_cab"]
+material = SubResource("mat_steel")
+size = Vector3(1.7, 0.9, 0.6)
+
+[sub_resource type="StandardMaterial3D" id="mat_runner"]
+albedo_color = Color(0.05, 0.3, 0.35, 1)
+emission_enabled = true
+emission = Color(0.25, 0.95, 1, 1)
+emission_energy_multiplier = 1.8
+
+[sub_resource type="BoxMesh" id="mesh_runner"]
+material = SubResource("mat_runner")
+size = Vector3(0.3, 0.22, 2.6)
+
+[sub_resource type="StandardMaterial3D" id="mat_container"]
+albedo_color = Color(0.08, 0.35, 0.4, 1)
+emission_enabled = true
+emission = Color(0.3, 1, 0.95, 1)
+emission_energy_multiplier = 1.2
+
+[sub_resource type="CylinderMesh" id="mesh_container"]
+material = SubResource("mat_container")
+top_radius = 0.45
+bottom_radius = 0.45
+height = 1.1
+
+[sub_resource type="BoxMesh" id="mesh_cap"]
+material = SubResource("mat_steel")
+size = Vector3(0.55, 0.12, 0.55)
+
+[node name="ConvoyTransport" type="CharacterBody3D"]
+collision_layer = 8
+collision_mask = 1
+script = ExtResource("1_convoy")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("shape_body")
+
+[node name="Visuals" type="Node3D" parent="."]
+
+[node name="Platform" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, 0)
+mesh = SubResource("mesh_platform")
+
+[node name="SideL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.93, 0.92, 0)
+mesh = SubResource("mesh_side")
+
+[node name="SideR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.93, 0.92, 0)
+mesh = SubResource("mesh_side")
+
+[node name="Cab" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -1.35)
+mesh = SubResource("mesh_cab")
+
+[node name="RunnerL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.32, 0)
+mesh = SubResource("mesh_runner")
+
+[node name="RunnerR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.32, 0)
+mesh = SubResource("mesh_runner")
+
+[node name="Container" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, -0.45)
+mesh = SubResource("mesh_container")
+
+[node name="ContainerCap" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0, -0.45)
+mesh = SubResource("mesh_cap")
+
+[node name="Glow" type="OmniLight3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, -0.45)
+light_color = Color(0.35, 1, 0.95, 1)
+light_energy = 0.9
+omnilight_range = 13.0
+
+[node name="Cargo" parent="Visuals" instance=ExtResource("5_giga")]
+transform = Transform3D(0.8, 0, 0, 0, 0.8, 0, 0, 0, 0.8, 0, 0.77, 0.85)
+ride_mode = true
+
+[node name="Hurtbox" type="Area3D" parent="."]
+collision_layer = 64
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_hurtbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("shape_body")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("3_health")
+
+[node name="BodySync" type="Node" parent="."]
+script = ExtResource("4_sync")
+
+[node name="NameLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.6, 0)
+pixel_size = 0.006
+billboard = 1
+no_depth_test = true
+text = "ЭНЕРГОКОРТЕЖ"
+font_size = 48
+outline_size = 12
+modulate = Color(0.45, 1, 0.95, 1)

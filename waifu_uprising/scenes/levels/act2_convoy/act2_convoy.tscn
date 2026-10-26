@@ -1,0 +1,394 @@
+[gd_scene load_steps=41 format=3]
+
+[ext_resource type="Script" path="res://scripts/levels/arena_01.gd" id="1_arena"]
+[ext_resource type="PackedScene" path="res://scenes/vehicles/convoy_transport.tscn" id="2_convoy"]
+[ext_resource type="Script" path="res://scripts/gameplay/convoy_director.gd" id="3_dir"]
+[ext_resource type="Script" path="res://scripts/data/convoy_spawn_event.gd" id="4_ev"]
+[ext_resource type="Script" path="res://scripts/gameplay/match_controller.gd" id="5_match"]
+[ext_resource type="Script" path="res://scripts/progression/progression_system.gd" id="6_prog"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="7_hud"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/crate_destructible.tscn" id="8_crate"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/pulse_trap.tscn" id="9_trap"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_top_color = Color(0.03, 0.02, 0.08, 1)
+sky_horizon_color = Color(0.14, 0.08, 0.24, 1)
+ground_horizon_color = Color(0.14, 0.08, 0.24, 1)
+ground_bottom_color = Color(0.02, 0.02, 0.05, 1)
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.45, 0.42, 0.6, 1)
+ambient_light_energy = 0.5
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.55
+glow_bloom = 0.12
+fog_enabled = true
+fog_light_color = Color(0.16, 0.1, 0.26, 1)
+fog_density = 0.0035
+
+[sub_resource type="StandardMaterial3D" id="mat_floor"]
+albedo_color = Color(0.09, 0.085, 0.15, 1)
+roughness = 0.92
+
+[sub_resource type="BoxMesh" id="mesh_floor"]
+material = SubResource("mat_floor")
+size = Vector3(120, 0.5, 30)
+
+[sub_resource type="BoxShape3D" id="shape_floor"]
+size = Vector3(120, 0.5, 30)
+
+[sub_resource type="StandardMaterial3D" id="mat_wall"]
+albedo_color = Color(0.12, 0.1, 0.2, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="mesh_wall_ns"]
+material = SubResource("mat_wall")
+size = Vector3(120, 3, 1)
+
+[sub_resource type="BoxShape3D" id="shape_wall_ns"]
+size = Vector3(120, 3, 1)
+
+[sub_resource type="BoxMesh" id="mesh_wall_ew"]
+material = SubResource("mat_wall")
+size = Vector3(1, 3, 30)
+
+[sub_resource type="BoxShape3D" id="shape_wall_ew"]
+size = Vector3(1, 3, 30)
+
+[sub_resource type="StandardMaterial3D" id="mat_neon"]
+albedo_color = Color(0.05, 0.15, 0.2, 1)
+emission_enabled = true
+emission = Color(0.25, 0.95, 1, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="BoxMesh" id="mesh_trim_ns"]
+material = SubResource("mat_neon")
+size = Vector3(120, 0.12, 0.12)
+
+[sub_resource type="StandardMaterial3D" id="mat_pillar"]
+albedo_color = Color(0.17, 0.15, 0.29, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="mesh_pillar"]
+material = SubResource("mat_pillar")
+size = Vector3(1.6, 3, 1.6)
+
+[sub_resource type="BoxShape3D" id="shape_pillar"]
+size = Vector3(1.6, 3, 1.6)
+
+[sub_resource type="StandardMaterial3D" id="mat_pad_teal"]
+transparency = 1
+albedo_color = Color(0.15, 0.85, 1, 0.22)
+emission_enabled = true
+emission = Color(0.2, 0.9, 1, 1)
+emission_energy_multiplier = 1.6
+
+[sub_resource type="CylinderMesh" id="mesh_start"]
+material = SubResource("mat_pad_teal")
+top_radius = 4.0
+bottom_radius = 4.0
+height = 0.06
+
+[sub_resource type="StandardMaterial3D" id="mat_pad_dim"]
+transparency = 1
+albedo_color = Color(0.4, 0.7, 0.9, 0.14)
+emission_enabled = true
+emission = Color(0.4, 0.8, 1, 1)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="CylinderMesh" id="mesh_cp"]
+material = SubResource("mat_pad_dim")
+top_radius = 2.4
+bottom_radius = 2.4
+height = 0.05
+
+[sub_resource type="StandardMaterial3D" id="mat_pad_gold"]
+transparency = 1
+albedo_color = Color(1, 0.8, 0.25, 0.25)
+emission_enabled = true
+emission = Color(1, 0.75, 0.3, 1)
+emission_energy_multiplier = 1.8
+
+[sub_resource type="CylinderMesh" id="mesh_end"]
+material = SubResource("mat_pad_gold")
+top_radius = 4.0
+bottom_radius = 4.0
+height = 0.06
+
+[sub_resource type="NavigationMesh" id="nav_mesh"]
+geometry_parsed_geometry_type = 1
+geometry_collision_mask = 1
+geometry_source_geometry_mode = 2
+geometry_source_group_name = &"nav_source"
+cell_size = 0.25
+cell_height = 0.25
+agent_radius = 0.45
+agent_height = 1.5
+agent_max_climb = 0.5
+
+[sub_resource type="Resource" id="ev1"]
+script = ExtResource("4_ev")
+progress_threshold = 0.04
+enemy_def_path = "res://resources/enemies/raider.tres"
+side = "ahead"
+count_base = 1
+count_per_player = 1
+
+[sub_resource type="Resource" id="ev2"]
+script = ExtResource("4_ev")
+progress_threshold = 0.15
+enemy_def_path = "res://resources/enemies/fop.tres"
+side = "flank"
+count_base = 1
+count_per_player = 1
+
+[sub_resource type="Resource" id="ev3"]
+script = ExtResource("4_ev")
+progress_threshold = 0.28
+enemy_def_path = "res://resources/enemies/raider.tres"
+side = "behind"
+count_base = 0
+count_per_player = 1
+
+[sub_resource type="Resource" id="ev4"]
+script = ExtResource("4_ev")
+progress_threshold = 0.4
+enemy_def_path = "res://resources/enemies/blocker.tres"
+side = "ahead"
+count_base = 1
+count_per_player = 0
+
+[sub_resource type="Resource" id="ev5"]
+script = ExtResource("4_ev")
+progress_threshold = 0.52
+enemy_def_path = "res://resources/enemies/fop.tres"
+side = "flank"
+count_base = 1
+count_per_player = 1
+
+[sub_resource type="Resource" id="ev6"]
+script = ExtResource("4_ev")
+progress_threshold = 0.64
+enemy_def_path = "res://resources/enemies/raider.tres"
+side = "ahead"
+count_base = 1
+count_per_player = 1
+
+[sub_resource type="Resource" id="ev7"]
+script = ExtResource("4_ev")
+progress_threshold = 0.76
+enemy_def_path = "res://resources/enemies/shadow.tres"
+side = "behind"
+count_base = 1
+count_per_player = 0
+
+[sub_resource type="Resource" id="ev8"]
+script = ExtResource("4_ev")
+progress_threshold = 0.88
+enemy_def_path = "res://resources/enemies/blocker.tres"
+side = "ahead"
+count_base = 1
+count_per_player = 0
+
+[node name="Act2Convoy" type="Node3D"]
+script = ExtResource("1_arena")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.8480481, 0.41758206, -0.32625088, 0, 0.6156615, 0.7880107, 0.52991927, -0.668271, 0.5221106, 0, 10, 0)
+light_color = Color(1, 0.95, 0.9, 1)
+light_energy = 0.9
+shadow_enabled = true
+directional_shadow_max_distance = 80.0
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.8660254, -0.25000003, 0.43301275, 0, 0.8660254, 0.5, -0.50000006, 0.4330127, -0.75, 0, 8, 0)
+light_color = Color(0.55, 0.45, 1, 1)
+light_energy = 0.35
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)
+mesh = SubResource("mesh_floor")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)
+shape = SubResource("shape_floor")
+
+[node name="WallN" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -15)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallN"]
+mesh = SubResource("mesh_wall_ns")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/WallN"]
+shape = SubResource("shape_wall_ns")
+
+[node name="Trim" type="MeshInstance3D" parent="Geometry/WallN"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0.52)
+mesh = SubResource("mesh_trim_ns")
+
+[node name="WallS" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 15)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallS"]
+mesh = SubResource("mesh_wall_ns")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/WallS"]
+shape = SubResource("shape_wall_ns")
+
+[node name="Trim" type="MeshInstance3D" parent="Geometry/WallS"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -0.52)
+mesh = SubResource("mesh_trim_ns")
+
+[node name="WallW" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -60, 1.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallW"]
+mesh = SubResource("mesh_wall_ew")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/WallW"]
+shape = SubResource("shape_wall_ew")
+
+[node name="WallE" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 1.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallE"]
+mesh = SubResource("mesh_wall_ew")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/WallE"]
+shape = SubResource("shape_wall_ew")
+
+[node name="Pillar1" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.5, -9.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Pillar1"]
+mesh = SubResource("mesh_pillar")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/Pillar1"]
+shape = SubResource("shape_pillar")
+
+[node name="Pillar2" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.5, -9.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Pillar2"]
+mesh = SubResource("mesh_pillar")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/Pillar2"]
+shape = SubResource("shape_pillar")
+
+[node name="Pillar3" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.5, 9.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Pillar3"]
+mesh = SubResource("mesh_pillar")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/Pillar3"]
+shape = SubResource("shape_pillar")
+
+[node name="Pillar4" type="StaticBody3D" parent="Geometry" groups=["nav_source"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.5, 9.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Pillar4"]
+mesh = SubResource("mesh_pillar")
+
+[node name="Collision" type="CollisionShape3D" parent="Geometry/Pillar4"]
+shape = SubResource("shape_pillar")
+
+[node name="StartPad" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0.03, 6)
+mesh = SubResource("mesh_start")
+
+[node name="CpPad1" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26, 0.03, -5)
+mesh = SubResource("mesh_cp")
+
+[node name="CpPad2" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.03, 4)
+mesh = SubResource("mesh_cp")
+
+[node name="CpPad3" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0.03, -4)
+mesh = SubResource("mesh_cp")
+
+[node name="EndPad" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.03, 3)
+mesh = SubResource("mesh_end")
+
+[node name="EndLabel" type="Label3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 4.2, 3)
+pixel_size = 0.008
+billboard = 1
+no_depth_test = true
+text = "ТОЧКА ЭВАКУАЦИИ"
+font_size = 56
+outline_size = 14
+modulate = Color(1, 0.85, 0.35, 1)
+
+[node name="Crate1" parent="Geometry" instance=ExtResource("8_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -34, 0, 10)
+
+[node name="Crate2" parent="Geometry" instance=ExtResource("8_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0, -10)
+
+[node name="Crate3" parent="Geometry" instance=ExtResource("8_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26, 0, 9)
+
+[node name="PulseTrap1" parent="Geometry" instance=ExtResource("9_trap")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0, -4)
+start_offset = 0.0
+
+[node name="PulseTrap2" parent="Geometry" instance=ExtResource("9_trap")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -3.5)
+start_offset = 3.0
+
+[node name="NavRegion" type="NavigationRegion3D" parent="."]
+navigation_mesh = SubResource("nav_mesh")
+
+[node name="SpawnPoints" type="Node3D" parent="."]
+
+[node name="PlayerSpawn0" type="Marker3D" parent="SpawnPoints" groups=["player_spawn_points"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -53, 0.2, 3)
+
+[node name="PlayerSpawn1" type="Marker3D" parent="SpawnPoints" groups=["player_spawn_points"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -53, 0.2, 9)
+
+[node name="PlayerSpawn2" type="Marker3D" parent="SpawnPoints" groups=["player_spawn_points"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -44, 0.2, 10)
+
+[node name="PlayerSpawn3" type="Marker3D" parent="SpawnPoints" groups=["player_spawn_points"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -44, 0.2, 2)
+
+[node name="Entities" type="Node3D" parent="."]
+
+[node name="ConvoyTransport" parent="." instance=ExtResource("2_convoy")]
+route_points = Array[Vector3]([Vector3(-48, 0, 6), Vector3(-26, 0, -5), Vector3(-4, 0, 4), Vector3(18, 0, -4), Vector3(40, 0, 3)])
+
+[node name="ConvoyDirector" type="Node" parent="."]
+script = ExtResource("3_dir")
+events = Array[ExtResource("4_ev")]([SubResource("ev1"), SubResource("ev2"), SubResource("ev3"), SubResource("ev4"), SubResource("ev5"), SubResource("ev6"), SubResource("ev7"), SubResource("ev8")])
+clamp_x = 56.0
+clamp_z = 12.0
+
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
+spawn_path = NodePath("../Entities")
+
+[node name="MatchController" type="Node" parent="."]
+script = ExtResource("5_match")
+
+[node name="ProgressionSystem" type="Node" parent="."]
+script = ExtResource("6_prog")
+
+[node name="HUD" parent="." instance=ExtResource("7_hud")]

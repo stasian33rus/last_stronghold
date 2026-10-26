@@ -41,6 +41,13 @@ extends Resource
 @export var dash_duration: float = 0.22
 @export var dash_cooldown: float = 2.5
 @export var dash_min_range: float = 4.5
+## --- Конвой (Акт II, Этап 5.2) ---
+## Приоритетная цель — транспорт кортежа (вместо ближайшего героя).
+@export var prefers_convoy: bool = false
+## Бежать в точку маршрута ВПЕРЕДИ транспорта на столько метров (перекрытие
+## пути): 0 = идти прямо к транспорту. Использует ConvoyTransport.get_point_ahead.
+@export var convoy_lead: float = 0.0
+
 ## Дальний бой (Плевальщик).
 @export var ranged: bool = false
 @export var projectile_scene: String = "res://scenes/enemies/spit_projectile.tscn"

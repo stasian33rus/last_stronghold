@@ -20,6 +20,12 @@ var rescue_label: Label ## Этап 4.1: прогресс спасения со�
 var boss_back: ColorRect ## Этап 5.1: полоса здоровья босса акта I
 var boss_fill: ColorRect
 var boss_label: Label
+var convoy_back: ColorRect ## Этап 5.2: здоровье транспорта кортежа (акт II)
+var convoy_fill: ColorRect
+var convoy_label: Label
+var convoy_prog_back: ColorRect ## прогресс маршрута кортежа
+var convoy_prog_fill: ColorRect
+var repair_label: Label ## подсказка/прогресс ремонта для локального игрока
 
 @onready var giga_label: Label = $TopCenter/GigaLabel
 @onready var giga_health_back: ColorRect = $TopCenter/GigaHealthBack
@@ -99,6 +105,42 @@ func _ready() -> void:
 	boss_label.add_theme_font_size_override("font_size", 13)
 	boss_label.position = Vector2(0.0, -18.0)
 	boss_back.add_child(boss_label)
+	## Полосы кортежа (Этап 5.2): тот же слот, что у полосы босса — акты
+	## не показываются одновременно. HP + тонкая полоса прогресса маршрута.
+	convoy_back = ColorRect.new()
+	convoy_back.name = "ConvoyHealthBack"
+	convoy_back.color = Color(0.08, 0.15, 0.15, 0.85)
+	convoy_back.size = Vector2(420.0, 14.0)
+	convoy_back.position = boss_back.position
+	convoy_back.visible = false
+	giga_health_back.get_parent().add_child(convoy_back)
+	convoy_fill = ColorRect.new()
+	convoy_fill.name = "Fill"
+	convoy_fill.color = Color(0.35, 1.0, 0.85)
+	convoy_fill.size = Vector2(420.0, 14.0)
+	convoy_back.add_child(convoy_fill)
+	convoy_label = Label.new()
+	convoy_label.name = "ConvoyLabel"
+	convoy_label.add_theme_font_size_override("font_size", 13)
+	convoy_label.position = Vector2(0.0, -18.0)
+	convoy_back.add_child(convoy_label)
+	convoy_prog_back = ColorRect.new()
+	convoy_prog_back.name = "ConvoyProgressBack"
+	convoy_prog_back.color = Color(0.12, 0.12, 0.16, 0.85)
+	convoy_prog_back.size = Vector2(420.0, 5.0)
+	convoy_prog_back.position = Vector2(0.0, 17.0)
+	convoy_back.add_child(convoy_prog_back)
+	convoy_prog_fill = ColorRect.new()
+	convoy_prog_fill.name = "Fill"
+	convoy_prog_fill.color = Color(1.0, 0.8, 0.3)
+	convoy_prog_fill.size = Vector2(0.0, 5.0)
+	convoy_prog_back.add_child(convoy_prog_fill)
+	repair_label = Label.new()
+	repair_label.name = "RepairLabel"
+	repair_label.visible = false
+	repair_label.add_theme_font_size_override("font_size", 16)
+	repair_label.add_theme_color_override("font_color", Color(0.55, 0.95, 1.0))
+	local_state_label.get_parent().add_child(repair_label)
 	upgrade_panel.visible = false
 	shop_panel.visible = false
 	ready_check.toggled.connect(_on_ready_toggled)
@@ -160,6 +202,7 @@ func _process(delta: float) -> void:
 	_update_giga()
 	_update_local()
 	_update_boss()
+	_update_convoy()
 	_update_wave()
 	_update_players_list()
 	_update_progression()
@@ -238,6 +281,50 @@ func _update_boss() -> void:
 	boss_fill.offset_right = boss_back.size.x * boss.health.health_factor()
 	boss_label.text = "%s — фаза %d/3" % [boss.def.display_name, boss.phase_index]
 
+## Этап 5.2: полосы кортежа (акт II). Читают РЕПЛИЦИРОВАННОЕ состояние
+## транспорта (BodySync-снапшоты) — как полоса босса в акте I.
+func _update_convoy() -> void:
+	if convoy_back == null:
+		return
+	var t := _convoy()
+	var show := t != null and is_instance_valid(t) and not t.health.is_dead
+	convoy_back.visible = show
+	if not show:
+		if repair_label != null:
+			repair_label.visible = false
+		return
+	convoy_fill.offset_right = convoy_back.size.x * t.health.health_factor()
+	convoy_prog_fill.size.x = convoy_prog_back.size.x * t.progress_factor()
+	convoy_label.text = "КОРТЕЖ %d/%d · маршрут %d%% · ремонт: %d" % [
+		int(ceil(t.health.health)), int(t.health.max_health),
+		int(t.progress_factor() * 100.0), t.repair_charges]
+	_update_repair_label(t)
+
+func _update_repair_label(t: ConvoyTransport) -> void:
+	if repair_label == null:
+		return
+	var near := _pawn != null and is_instance_valid(_pawn) \
+		and not _pawn.health.is_dead and _pawn.state != PlayerPawn.State.DOWN \
+		and _pawn.global_position.distance_to(t.global_position) <= ConvoyTransport.REPAIR_RADIUS + 0.8
+	repair_label.visible = near
+	if not near:
+		return
+	if t.health.health >= t.health.max_health:
+		repair_label.text = "Кортеж цел"
+	elif t.repair_charges <= 0:
+		repair_label.text = "Ремонт: заряды исчерпаны"
+	elif t.repair_progress > 0.0:
+		repair_label.text = "Ремонт кортежа: %d%% — удерживайте R" % int(t.repair_progress * 100.0)
+	else:
+		repair_label.text = "Ремонт кортежа: удерживайте R (+%d HP, зарядов: %d)" % [int(t.repair_amount), t.repair_charges]
+
+func _convoy() -> ConvoyTransport:
+	for n in get_tree().get_nodes_in_group("convoy_transport"):
+		var t := n as ConvoyTransport
+		if t != null:
+			return t
+	return null
+
 ## Этап 4.1: локальный игрок как спасатель — прогресс канала на цели.
 func _update_rescue_label() -> void:
 	if rescue_label == null:
@@ -261,7 +348,12 @@ func _update_wave() -> void:
 			wave_label.text = ("ПРИГОТОВЬТЕСЬ: %d" % n) if n > 0 else "В БОЙ!"
 			enemies_label.text = ""
 		MatchController.Phase.FIGHT:
-			wave_label.text = "ВОЛНА %d / %d" % [maxi(1, _mc.wave_number), _mc.waves_total]
+			var convoy := _convoy()
+			if convoy != null:
+				## Акт II: вместо номера волны — прогресс маршрута кортежа.
+				wave_label.text = "СОПРОВОЖДЕНИЕ КОРТЕЖА — %d%% маршрута" % int(convoy.progress_factor() * 100.0)
+			else:
+				wave_label.text = "ВОЛНА %d / %d" % [maxi(1, _mc.wave_number), _mc.waves_total]
 			enemies_label.text = "Противников: %d" % _mc.enemies_left_total
 		MatchController.Phase.WAVE_COMPLETE:
 			wave_label.text = "ВОЛНА %d ОТБИТА!" % maxi(1, _mc.wave_number)
@@ -330,16 +422,26 @@ func _show_announcement(text: String, duration: float) -> void:
 func _on_match_ended(victory: bool, stats: Dictionary) -> void:
 	if _ended_shown:
 		return
+	## Окно смены сцены (реванш стартует из этого же сигнала): вне дерева HUD
+	## уже не обслуживает экран результата — его строит HUD новой сцены.
+	if not is_inside_tree():
+		return
 	_ended_shown = true
 	if upgrade_panel.visible:
 		_on_offer_closed()
 	result_title.text = "ПОБЕДА!" if victory else "ПОРАЖЕНИЕ"
 	result_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3) if victory else Color(1.0, 0.35, 0.4))
 	var lines: Array[String] = []
+	var convoy := _convoy()
 	if victory:
-		lines.append("Источник отстоян! Гигачад гордится вами.")
+		lines.append("Кортеж прибыл к точке эвакуации! Источник спасён." if convoy != null else "Источник отстоян! Гигачад гордится вами.")
 	else:
-		lines.append("Гигачад пал... Орден Гламура ликует.")
+		if convoy != null and convoy.health.is_dead:
+			lines.append("Кортеж уничтожен... Орден Гламура забрал источник.")
+		elif convoy != null:
+			lines.append("Груз Гигачада пал... Кортеж не доехал.")
+		else:
+			lines.append("Гигачад пал... Орден Гламура ликует.")
 	lines.append("")
 	for peer_id in stats.keys():
 		var s: Dictionary = stats[peer_id]

@@ -6,11 +6,14 @@ extends Node
 ##   +autotest=host|client — интеграционный сетевой тест (см. tests/autotest_runner.gd)
 ##   +rematch=1            — с +autotest: после победы сыграть второй матч (реванш)
 ##   +evolve=1             — с +autotest: проверка эволюции и её репликации клиенту
+##   +act1=1 / +rescue=1 / +trap=1 — сценарные сетевые тесты этапов 5.1/4.1/4.3
+##   +act2=1               — с +autotest: сопровождение кортежа акта II (Этап 5.2)
 ##   +ip=A.B.C.D         — адрес сервера для autotest=client
 ##   +fast=1             — ускоренный баланс прогрессии (короткие интермиссии — для тестов)
 
 const MENU_SCENE: String = "res://scenes/main_menu/main_menu.tscn"
 const ARENA_SCENE: String = "res://scenes/levels/arena_01/arena_01.tscn"
+const ACT2_SCENE: String = "res://scenes/levels/act2_convoy/act2_convoy.tscn"
 const BALANCE_DEFAULT: String = "res://resources/balance/progression.tres"
 const BALANCE_FAST: String = "res://resources/balance/progression_fast.tres"
 
@@ -29,6 +32,7 @@ var autotest_evolve: bool = false
 var autotest_rescue: bool = false
 var autotest_trap: bool = false
 var autotest_act1: bool = false
+var autotest_act2: bool = false
 var dedicated_mode: bool = false
 var dedicated_port: int = Net.DEFAULT_PORT
 
@@ -65,6 +69,8 @@ func _parse_cmdline() -> void:
 			autotest_trap = true
 		elif a == "act1=1" or a == "act1":
 			autotest_act1 = true
+		elif a == "act2=1" or a == "act2":
+			autotest_act2 = true
 		elif a.begins_with("ip="):
 			autotest_ip = a.trim_prefix("ip=")
 		elif a == "fast=1" or a == "fast":
@@ -91,12 +97,16 @@ func leave_match_to_menu() -> void:
 
 ## Offline-матч (один процесс, без ENet): тот же серверный код, peer 1 = локальный игрок.
 ## Используется одиночными тестами и отладкой арены без сети.
-func start_offline_match(pclass: StringName = &"berserk", pname: String = "Игрок") -> void:
+func start_offline_match(pclass: StringName = &"berserk", pname: String = "Игрок", scene_path: String = ARENA_SCENE) -> void:
 	match_seed = randi()
 	rng.seed = match_seed
 	match_players_snapshot = {1: {"name": pname, "class_id": pclass, "ready": true}}
 	Net.players = match_players_snapshot.duplicate(true)
-	get_tree().change_scene_to_file(ARENA_SCENE)
+	get_tree().change_scene_to_file(scene_path)
+
+## Offline-прогон Акта II (кортеж) — запуск без прохождения Акта I (Этап 5.2).
+func start_offline_act2(pclass: StringName = &"berserk", pname: String = "Игрок") -> void:
+	start_offline_match(pclass, pname, ACT2_SCENE)
 
 ## Случайный поток матча (спавны волн и т.п.) — детерминирован от match_seed.
 func next_rand() -> int:

@@ -84,6 +84,11 @@ var _rescue_holding: bool = false
 var _rescue_progress: float = 0.0
 var _local_rescue_target: PlayerPawn = null ## намерение локального удержания interact
 var _rescue_req_left: float = 0.0 ## троттлинг самолечения удержания (повторный запрос)
+## Этап 5.2 — ремонт транспорта кортежа (Акт II): намерение удержания interact
+## у транспорта. Канал, заряды и кулдаун — сервер-authoritative на транспорте.
+const CONVOY_INTERACT_RADIUS: float = 4.0 ## клиентский радиус намерения (сервер строже)
+var _convoy_hold_sent: bool = false
+var _convoy_req_left: float = 0.0 ## троттлинг повторов намерения (как у спасения)
 ## Реплицируемые поля для HUD/индикатора (сервер пишет напрямую, клиент — из снапшотов).
 var sync_down_timer: float = -1.0
 var sync_rescue_progress: float = 0.0
@@ -421,6 +426,7 @@ func _client_send_input() -> void:
 	if parry_pressed and not _prev_parry_pressed:
 		sv_request_action.rpc_id(1, "parry")
 	_update_rescue_intent(bool(s["hold_interact"]))
+	_update_convoy_intent(bool(s["hold_interact"]))
 	_prev_attack_pressed = attack_pressed
 	_prev_skill_pressed = skill_pressed
 	_prev_parry_pressed = parry_pressed
@@ -441,6 +447,7 @@ func _consume_local_input() -> void:
 	if parry_pressed and not _prev_parry_pressed:
 		try_parry()
 	_update_rescue_intent(bool(s["hold_interact"]))
+	_update_convoy_intent(bool(s["hold_interact"]))
 	_prev_attack_pressed = attack_pressed
 	_prev_skill_pressed = skill_pressed
 	_prev_parry_pressed = parry_pressed
@@ -856,6 +863,9 @@ func _on_died(dmg: Dictionary) -> void:
 	if _local_rescue_target != null and is_instance_valid(_local_rescue_target):
 		_send_rescue_hold(_local_rescue_target, false)
 	_local_rescue_target = null
+	## Этап 5.2: поверженный не ремонтирует — намерение удержания гаснет.
+	if _convoy_hold_sent:
+		_send_convoy_hold(false)
 	kb.apply(dmg.get("knockback_dir", Vector3.FORWARD), 4.0, 1.0)
 	get_tree().call_group(&"match_controller", "register_down", owner_peer)
 	fx_down.rpc()
@@ -977,6 +987,54 @@ func _send_rescue_hold(target: PlayerPawn, v: bool) -> void:
 		target.sv_rescue_hold.rpc_id(1, v)
 	elif Net.is_server():
 		target.server_rescue_hold_by_peer(owner_peer, v)
+
+## Этап 5.2: намерение ремонта кортежа (Акт II) — зеркало логики спасения.
+## Пока interact удерживается рядом с транспортом (и спасение не активно),
+## сообщаем серверу; канал/заряды/кулдаун считает сервер на транспорте,
+## поэтому повторные сетевые события не могут вызвать второй ремонт.
+func _update_convoy_intent(hold: bool) -> void:
+	if not is_local_pawn() and external_input == null:
+		return ## нет источника ввода (чужие пешки offline/тестов): намерение не трогаем
+	if state == State.DOWN or health.is_dead:
+		hold = false
+	if hold and _local_rescue_target != null and is_instance_valid(_local_rescue_target):
+		hold = false ## спасение союзника (4.1) имеет приоритет над ремонтом
+	var t := _nearest_convoy()
+	if not hold or t == null:
+		if _convoy_hold_sent:
+			_send_convoy_hold(false)
+		return
+	## Повторяем намерение, пока кнопка держится: сервер гасит устаревшие
+	## удержания таймштампом, а дубликаты не дают повторного ремонта.
+	_convoy_req_left -= get_physics_process_delta_time()
+	if not _convoy_hold_sent or _convoy_req_left <= 0.0:
+		_convoy_req_left = 0.25
+		_send_convoy_hold(true)
+
+func _nearest_convoy() -> Node3D:
+	var best: Node3D = null
+	var bd := CONVOY_INTERACT_RADIUS
+	for n in get_tree().get_nodes_in_group("convoy_transport"):
+		var t := n as Node3D
+		if t == null or not is_instance_valid(t):
+			continue
+		var h := t.get_node_or_null(^"Health") as HealthComponent
+		if h == null or h.is_dead:
+			continue
+		var d := global_position.distance_to(t.global_position)
+		if d <= bd:
+			best = t
+	return best
+
+func _send_convoy_hold(v: bool) -> void:
+	_convoy_hold_sent = v
+	var t := _nearest_convoy()
+	if t == null:
+		return ## транспорт вне радиуса/уничтожен: сервер сам погасит намерение
+	if Net.is_online() and Net.my_id() != 1:
+		t.sv_repair_hold.rpc_id(1, v)
+	elif Net.is_server():
+		t.server_repair_hold_by_peer(owner_peer, v)
 
 ## RPC клиента-спасателя. Валидация отправителя: только владелец живой пешки,
 ## не сам поверженный; цель обязана быть в DOWN. Повторные/чужие запросы
