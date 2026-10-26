@@ -17,6 +17,9 @@ var _buffs_shown_hash: int = 0
 var _local_prog: Dictionary = {}
 var _local_prog_level: int = 0
 var rescue_label: Label ## Этап 4.1: прогресс спасения союзника локальным игроком
+var boss_back: ColorRect ## Этап 5.1: полоса здоровья босса акта I
+var boss_fill: ColorRect
+var boss_label: Label
 
 @onready var giga_label: Label = $TopCenter/GigaLabel
 @onready var giga_health_back: ColorRect = $TopCenter/GigaHealthBack
@@ -78,6 +81,24 @@ func _ready() -> void:
 	rescue_label.add_theme_font_size_override("font_size", 16)
 	rescue_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
 	local_state_label.get_parent().add_child(rescue_label)
+	## Полоса босса: под полосой Гигачада, видна только пока босс жив.
+	boss_back = ColorRect.new()
+	boss_back.name = "BossHealthBack"
+	boss_back.color = Color(0.15, 0.13, 0.1, 0.85)
+	boss_back.size = Vector2(420.0, 14.0)
+	boss_back.position = Vector2(giga_health_back.position.x - 60.0, giga_health_back.position.y + giga_health_back.size.y + 6.0)
+	boss_back.visible = false
+	giga_health_back.get_parent().add_child(boss_back)
+	boss_fill = ColorRect.new()
+	boss_fill.name = "Fill"
+	boss_fill.color = Color(1.0, 0.8, 0.25)
+	boss_fill.size = Vector2(420.0, 14.0)
+	boss_back.add_child(boss_fill)
+	boss_label = Label.new()
+	boss_label.name = "BossLabel"
+	boss_label.add_theme_font_size_override("font_size", 13)
+	boss_label.position = Vector2(0.0, -18.0)
+	boss_back.add_child(boss_label)
 	upgrade_panel.visible = false
 	shop_panel.visible = false
 	ready_check.toggled.connect(_on_ready_toggled)
@@ -138,6 +159,7 @@ func _process(delta: float) -> void:
 	_find_system()
 	_update_giga()
 	_update_local()
+	_update_boss()
 	_update_wave()
 	_update_players_list()
 	_update_progression()
@@ -199,6 +221,22 @@ func _update_local() -> void:
 	else:
 		local_state_label.text = ""
 	_update_rescue_label()
+
+## Этап 5.1: полоса босса (серверное здоровье реплицируется BodySync-снапшотами).
+func _update_boss() -> void:
+	if boss_back == null:
+		return
+	var boss: BossAct1 = null
+	for n in get_tree().get_nodes_in_group("boss_unit"):
+		boss = n as BossAct1
+		if boss != null:
+			break
+	var show := boss != null and is_instance_valid(boss) and not boss.health.is_dead
+	boss_back.visible = show
+	if not show:
+		return
+	boss_fill.offset_right = boss_back.size.x * boss.health.health_factor()
+	boss_label.text = "%s — фаза %d/3" % [boss.def.display_name, boss.phase_index]
 
 ## Этап 4.1: локальный игрок как спасатель — прогресс канала на цели.
 func _update_rescue_label() -> void:

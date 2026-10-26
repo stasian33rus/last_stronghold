@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WaveDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/wave_definition.gd" id="1_wv"]
+[ext_resource type="Script" path="res://scripts/data/wave_group.gd" id="2_wg"]
+
+[sub_resource type="Resource" id="gb"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/boss_act1.tres"
+count_base = 1
+count_per_player = 0
+
+[sub_resource type="Resource" id="gs"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/shadow.tres"
+count_base = 2
+count_per_player = 1
+
+[resource]
+script = ExtResource("1_wv")
+index = 5
+display_name = "Финал акта I: Маэстро Ордена"
+intro_delay = 2.0
+spawn_interval = 0.6
+max_alive = 10
+groups = Array[ExtResource("2_wg")]([SubResource("gb"), SubResource("gs")])

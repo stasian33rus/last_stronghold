@@ -69,6 +69,8 @@ func _on_enemy_damaged_xp(amount: float, damage: Dictionary, foe: EnemyBase) -> 
 func _on_enemy_died_rewards(foe: EnemyBase, killing_damage: Dictionary) -> void:
 	if not Net.is_server():
 		return
+	if _mc != null and (_mc.phase == MatchController.Phase.VICTORY or _mc.phase == MatchController.Phase.DEFEAT):
+		return ## после финала матча награды не начисляются
 	if foe.has_meta("rewards_granted"):
 		return ## защита от повторного сигнала/вызова (двойные награды недопустимы)
 	foe.set_meta("rewards_granted", true)
@@ -92,6 +94,8 @@ func _on_enemy_died_rewards(foe: EnemyBase, killing_damage: Dictionary) -> void:
 ## Награда за разрушение объекта (ящики и пр.) — вызывается сигналом destructible_destroyed.
 func grant_prop_reward(peer_id: int) -> void:
 	if not Net.is_server() or not states.has(peer_id):
+		return
+	if _mc != null and (_mc.phase == MatchController.Phase.VICTORY or _mc.phase == MatchController.Phase.DEFEAT):
 		return
 	add_xp(peer_id, balance.xp_crate)
 	add_coins(peer_id, balance.coins_crate, "Монеты за разрушение")

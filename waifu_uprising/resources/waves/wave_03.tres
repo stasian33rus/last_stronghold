@@ -21,6 +21,12 @@ enemy_def_path = "res://resources/enemies/brute.tres"
 count_base = 1
 count_per_player = 0
 
+[sub_resource type="Resource" id="gE"]
+script = ExtResource("2_wg")
+enemy_def_path = "res://resources/enemies/fop_elite.tres"
+count_base = 1
+count_per_player = 1
+
 [resource]
 script = ExtResource("1_wv")
 index = 3
@@ -28,4 +34,4 @@ display_name = "Тени подиума"
 intro_delay = 1.0
 spawn_interval = 0.55
 max_alive = 12
-groups = Array[ExtResource("2_wg")]([SubResource("g0"), SubResource("g1"), SubResource("g2")])
+groups = Array[ExtResource("2_wg")]([SubResource("g0"), SubResource("g1"), SubResource("g2"), SubResource("gE")])

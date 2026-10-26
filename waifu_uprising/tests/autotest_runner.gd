@@ -58,6 +58,8 @@ var _rsc_reedge_done := false
 var _trap_conn := false
 var _trap_seq: Array = []
 var _tr_step := 0
+var _act1_boss_seen := false
+var _act1_phase_sync := false
 var _tr_t := 0.0
 var _rsc_progress_seen := false
 var _rsc_revived_hp := -1.0
@@ -113,6 +115,7 @@ func _physics_process(delta: float) -> void:
 			_handle_progression(delta)
 			_handle_rescue_test(delta)
 			_handle_trap_test(delta)
+			_observe_act1()
 			_check_sync()
 
 func _set_phase(p: String) -> void:
@@ -594,3 +597,21 @@ func _handle_trap_test(delta: float) -> void:
 						_finish(true, "trap client scenario verified")
 					elif _tr_t > 40.0:
 						_finish(false, "trap: client saw no ACTIVE state")
+
+## Этап 5.1: наблюдение синхронности акта I (волны/босс) между пирами.
+func _observe_act1() -> void:
+	if not Game.autotest_act1:
+		return
+	var boss: BossAct1 = null
+	for n in get_tree().get_nodes_in_group("boss_unit"):
+		boss = n as BossAct1
+		if boss != null:
+			break
+	if boss == null:
+		return
+	if not _act1_boss_seen:
+		_act1_boss_seen = true
+		print("[AUTOTEST] BOSS_SEEN %s: босс появился (репликация спавна)" % mode)
+	if mode == "client" and not _act1_phase_sync and boss.health.health_factor() < 0.62:
+		_act1_phase_sync = true
+		print("[AUTOTEST] BOSS_PHASE_SYNC client: hp босса реплицирован (%.0f%%)" % (boss.health.health_factor() * 100.0))

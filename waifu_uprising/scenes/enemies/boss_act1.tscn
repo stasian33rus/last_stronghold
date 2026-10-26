@@ -1,0 +1,131 @@
+[gd_scene load_steps=20 format=3]
+
+[ext_resource type="Script" path="res://scripts/ai/enemy_boss.gd" id="1_brute"]
+[ext_resource type="Script" path="res://scripts/gameplay/enemy_visuals.gd" id="2_evis"]
+[ext_resource type="Script" path="res://scripts/combat/hitbox_component.gd" id="3_hitbox"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="4_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="5_health"]
+[ext_resource type="Script" path="res://scripts/physics/knockback_component.gd" id="6_kb"]
+[ext_resource type="Script" path="res://scripts/networking/body_sync.gd" id="7_sync"]
+
+[sub_resource type="CapsuleShape3D" id="shape_body"]
+radius = 0.85
+height = 2.9
+
+[sub_resource type="StandardMaterial3D" id="mat_body"]
+albedo_color = Color(0.85, 0.65, 0.15, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="mesh_body"]
+material = SubResource("mat_body")
+size = Vector3(1.35, 1.5, 0.85)
+
+[sub_resource type="BoxMesh" id="mesh_leg"]
+material = SubResource("mat_body")
+size = Vector3(0.38, 0.8, 0.42)
+
+[sub_resource type="StandardMaterial3D" id="mat_skin"]
+albedo_color = Color(0.85, 0.62, 0.55, 1)
+roughness = 0.65
+
+[sub_resource type="SphereMesh" id="mesh_head"]
+material = SubResource("mat_skin")
+radius = 0.26
+height = 0.52
+
+[sub_resource type="StandardMaterial3D" id="mat_gold"]
+albedo_color = Color(0.95, 0.75, 0.25, 1)
+metallic = 0.85
+roughness = 0.3
+emission_enabled = true
+emission = Color(1, 0.75, 0.2, 1)
+emission_energy_multiplier = 0.5
+
+[sub_resource type="BoxMesh" id="mesh_accent"]
+material = SubResource("mat_gold")
+size = Vector3(1.75, 0.2, 0.95)
+
+[sub_resource type="StandardMaterial3D" id="mat_steel"]
+albedo_color = Color(0.45, 0.42, 0.5, 1)
+metallic = 0.8
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="mesh_club"]
+material = SubResource("mat_steel")
+size = Vector3(0.38, 0.38, 1.35)
+
+[sub_resource type="SphereShape3D" id="shape_hitbox"]
+radius = 1.15
+
+[node name="BossAct1" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 15
+script = ExtResource("1_brute")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
+shape = SubResource("shape_body")
+
+[node name="Visuals" type="Node3D" parent="."]
+script = ExtResource("2_evis")
+
+[node name="LegL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32, 0.4, 0)
+mesh = SubResource("mesh_leg")
+
+[node name="LegR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.32, 0.4, 0)
+mesh = SubResource("mesh_leg")
+
+[node name="Body" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("mesh_body")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.45, 0)
+mesh = SubResource("mesh_head")
+
+[node name="Accent" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.22, 0)
+mesh = SubResource("mesh_accent")
+
+[node name="WeaponPivot" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 1.4, -0.25)
+
+[node name="Club" type="MeshInstance3D" parent="Visuals/WeaponPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.55)
+mesh = SubResource("mesh_club")
+
+[node name="NavAgent" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.7
+target_desired_distance = 1.2
+
+[node name="Hitbox" type="Area3D" parent="."]
+collision_layer = 32
+collision_mask = 64
+monitoring = false
+monitorable = false
+script = ExtResource("3_hitbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hitbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, -1.7)
+shape = SubResource("shape_hitbox")
+
+[node name="Hurtbox" type="Area3D" parent="."]
+collision_layer = 128
+collision_mask = 0
+monitoring = false
+script = ExtResource("4_hurtbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
+shape = SubResource("shape_body")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("5_health")
+
+[node name="Knockback" type="Node" parent="."]
+script = ExtResource("6_kb")
+
+[node name="BodySync" type="Node" parent="."]
+script = ExtResource("7_sync")

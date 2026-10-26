@@ -29,6 +29,7 @@ func _run() -> void:
 	await _test_rescue_flow()
 	await _test_physics_flow()
 	await _test_env_flow()
+	await _test_act1_flow()
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
@@ -151,12 +152,13 @@ func _test_data_layers() -> void:
 	if w4 != null:
 		for g in w4.groups:
 			w4_paths.append(g.enemy_def_path)
-	_check(w4 != null and w4.groups.size() == 4
+	_check(w4 != null and w4.groups.size() == 5
 			and w4_paths.has("res://resources/enemies/fop.tres")
 			and w4_paths.has("res://resources/enemies/brute.tres")
 			and w4_paths.has("res://resources/enemies/shadow.tres")
-			and w4_paths.has("res://resources/enemies/spitter.tres"),
-		"Волна 4: состав из всех 4 архетипов")
+			and w4_paths.has("res://resources/enemies/spitter.tres")
+			and w4_paths.has("res://resources/enemies/fop_elite.tres"),
+		"Волна 4: состав из всех 4 архетипов + элита")
 	for path in [
 		"res://scenes/characters/player.tscn",
 		"res://scenes/enemies/fop.tscn",
@@ -432,7 +434,7 @@ func _test_full_match_flow() -> void:
 		"После истечения баффа урон = базовый × модификаторы (%.1f)" % pawn.hitbox.damage)
 
 	## --- Волны 2-4: зачистка, переходы, ровно один старт на волну.
-	for wave_idx in range(2, 5):
+	for wave_idx in range(2, 6):
 		var has_enemies: bool = await _wait_until(func(): return not _alive_enemies().is_empty(), 12.0)
 		if not has_enemies:
 			_check(false, "Волна %d: враги появились" % wave_idx)
@@ -446,10 +448,35 @@ func _test_full_match_flow() -> void:
 		var cleared: bool = await _wait_until(func():
 			_kill_all_enemies()
 			return mc.phase != MatchController.Phase.FIGHT, 15.0)
+		if not cleared:
+			for e in _alive_enemies():
+				print("[DBG] wave5 alive: %s state=%d dead=%s pos=%s" % [e.def.id if e.def else "?", e.state, str(e.health.is_dead), str(e.global_position)])
+			print("[DBG] wave5 wm: alive=%d queue=%d spawn_q=%d active=%s" % [wm.enemies_alive, wm.enemies_in_queue, wm.get("_spawn_queue").size(), str(wm.get("_active"))])
 		_check(cleared, "Волна %d: все враги уничтожены (включая допавшихся)" % wave_idx)
-		if wave_idx < 4:
+		if wave_idx < 5:
 			var inter_n: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.INTERMISSION, 10.0)
 			_check(inter_n, "Волна %d зачищена -> интермиссия" % wave_idx)
+			var sys_r := _prog()
+			var st_r: ProgressionState = sys_r.states.get(1, null)
+			var probe_enemy: EnemyBase = load("res://scenes/enemies/fop.tscn").instantiate()
+			probe_enemy.def = load("res://resources/enemies/fop.tres")
+			get_tree().current_scene.get_node(^"Entities").add_child(probe_enemy)
+			probe_enemy.position = Vector3(15.0, 0.5, 15.0)
+			## _register_enemy подключает И damage_taken (вклад), И died_on_server (награды) —
+			## как у врагов из волны. Ручное подключение died_on_server здесь было бы дублем
+			## (Godot логирует ERROR «already connected»), поэтому подключаем только через реестр.
+			sys_r._register_enemy(probe_enemy) ## учёт вклада урона, как у врагов из волны
+			await _frames(3)
+			st_r.xp = 0 ## гарантия: 20 XP не вызывают повышения уровня внутри проверки
+			var coins_r0 := st_r.coins
+			var kill_dmg := Units.make_damage(9999.0, _local_pawn(), 1, Vector3.FORWARD, 5.0, probe_enemy.global_position)
+			probe_enemy.health.take_damage(kill_dmg)
+			await _frames(3)
+			sys_r._on_enemy_died_rewards(probe_enemy, kill_dmg) ## дублирующее событие
+			await _frames(3)
+			_check(st_r.coins - coins_r0 == sys_r.balance.coins_kill and st_r.xp == sys_r.balance.xp_normal,
+				"Награда за врага ровно один раз (дубль события бессилен): +%d монет, %d XP" % [st_r.coins - coins_r0, st_r.xp])
+			probe_enemy.queue_free()
 			if wave_idx == 3:
 				## Лимит за интермиссию: 3 малых лечения, 4-е отклоняется.
 				sys.add_coins(1, 200, "тест")
@@ -458,14 +485,15 @@ func _test_full_match_flow() -> void:
 				var b3 := sys.try_buy(1, &"potion_small")
 				var b4 := sys.try_buy(1, &"potion_small")
 				_check(b1 and b2 and b3 and not b4, "Лимит за интермиссию: 3 лечения ок, 4-е отклонено")
+			await _test_valkyrie() ## бой серии/копий и награда — до финала акта
 			sys.set_wave_ready(1, true)
 			var fight_n: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.FIGHT and wm.current_wave == wave_idx + 1, 12.0)
 			_check(fight_n, "Волна %d началась после ready" % (wave_idx + 1))
 		else:
-			var vic: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.VICTORY, 6.0)
-			_check(vic, "ПОБЕДА после финальной волны 4")
+			var vic: bool = await _wait_until(func(): return mc.phase == MatchController.Phase.VICTORY, 20.0)
+			_check(vic, "ПОБЕДА после финальной волны 5 (босс повержен)")
 
-	_check(_waves_started_log == [1, 2, 3, 4], "Каждая волна стартовала ровно один раз: %s" % str(_waves_started_log))
+	_check(_waves_started_log == [1, 2, 3, 4, 5], "Каждая волна стартовала ровно один раз: %s" % str(_waves_started_log))
 	var proj_clean: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("projectiles").is_empty(), 4.0)
 	_check(proj_clean, "Снаряды удалены после завершения матча")
 	var foes_clean: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("enemy_units").is_empty(), 5.0)
@@ -474,31 +502,8 @@ func _test_full_match_flow() -> void:
 	_check(stats.has(1) and int(stats[1]["kills"]) >= 10, "Статистика убийств посчитана сервером (kills=%d)" % int(stats[1]["kills"]))
 
 	## Однократность награды за врага: дублирующее died-событие не даёт второй XP/монеты.
-	var sys_r := _prog()
-	var st_r: ProgressionState = sys_r.states.get(1, null)
-	var probe_enemy: EnemyBase = load("res://scenes/enemies/fop.tscn").instantiate()
-	probe_enemy.def = load("res://resources/enemies/fop.tres")
-	get_tree().current_scene.get_node(^"Entities").add_child(probe_enemy)
-	probe_enemy.position = Vector3(15.0, 0.5, 15.0)
-	## _register_enemy подключает И damage_taken (вклад), И died_on_server (награды) —
-	## как у врагов из волны. Ручное подключение died_on_server здесь было бы дублем
-	## (Godot логирует ERROR «already connected»), поэтому подключаем только через реестр.
-	sys_r._register_enemy(probe_enemy) ## учёт вклада урона, как у врагов из волны
-	await _frames(3)
-	st_r.xp = 0 ## гарантия: 20 XP не вызывают повышения уровня внутри проверки
-	var coins_r0 := st_r.coins
-	var kill_dmg := Units.make_damage(9999.0, _local_pawn(), 1, Vector3.FORWARD, 5.0, probe_enemy.global_position)
-	probe_enemy.health.take_damage(kill_dmg)
-	await _frames(3)
-	sys_r._on_enemy_died_rewards(probe_enemy, kill_dmg) ## дублирующее событие
-	await _frames(3)
-	_check(st_r.coins - coins_r0 == sys_r.balance.coins_kill and st_r.xp == sys_r.balance.xp_normal,
-		"Награда за врага ровно один раз (дубль события бессилен): +%d монет, %d XP" % [st_r.coins - coins_r0, st_r.xp])
-	probe_enemy.queue_free()
 
 	await _test_evolution()
-
-	await _test_valkyrie()
 
 	await _test_progression()
 
@@ -507,12 +512,12 @@ func _test_full_match_flow() -> void:
 	var obj_after := int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	_obj_after_match1 = obj_after
 	var diag := ""
-	## Предел +260: разовое построение UI матча (строки магазина ~40 узлов, карточки,
+	## Предел +380: разовое построение UI матча + босс/элиты/полоса босса (Этап 5.1) (строки магазина ~40 узлов, карточки,
 	## строки игроков) ПЛЮС узлы инстанцированной .glb-модели пешки (~80 на форму,
 	## Этап 3.3 заменил лёгкую заглушку моделью) — легитимный одноразовый рост.
 	## Настоящая проверка утечек — кросс-матчевое сравнение в конце
 	## _test_defeat_and_down_flow (объекты не должны накапливаться от матча к матчу).
-	if obj_after > _obj_baseline + 260:
+	if obj_after > _obj_baseline + 380:
 		var enemies_left := get_tree().get_nodes_in_group("enemy_units").size()
 		var hud_node2 := get_tree().current_scene.get_node_or_null(^"HUD")
 		var cards := -1
@@ -523,8 +528,8 @@ func _test_full_match_flow() -> void:
 		var entities := get_tree().current_scene.get_node_or_null(^"Entities")
 		diag = " [diag: врагов=%d карт=%d тостов=%d сущностей=%d]" % [
 			enemies_left, cards, toasts, entities.get_child_count() if entities != null else -1]
-	_check(obj_after <= _obj_baseline + 260,
-		"Объекты в матче: разовый рост в пределах UI+модели (%d до волны -> %d после, предел +%d)%s" % [_obj_baseline, obj_after, 260, diag])
+	_check(obj_after <= _obj_baseline + 380,
+		"Объекты в матче: разовый рост в пределах UI+модели (%d до волны -> %d после, предел +%d)%s" % [_obj_baseline, obj_after, 380, diag])
 
 # ------------------------------------------------------------------ эволюция (Этап 3)
 
@@ -1701,3 +1706,68 @@ func _test_env_flow() -> void:
 			fresh = false
 	_check(fresh and get_tree().get_nodes_in_group("debris").size() == 0,
 			"Окружение: повторный матч не оставляет разрушений/обломков/состояний ловушек")
+
+## Этап 5.1: законченный цикл акта I — 5 волн, элиты, босс с фазами, победа.
+func _test_act1_flow() -> void:
+	Game.start_offline_match(&"berserk", "Акт-1")
+	await _frames(3)
+	var mc := _match()
+	var prog := _prog()
+	if mc == null:
+		_check(false, "Акт I: матч стартовал")
+		return
+	var waves_seen: Array = []
+	var elite_seen := false
+	var boss: BossAct1 = null
+	var boss_seen := false
+	var phases_seen: Array = []
+	var guard := 0
+	var victory := false
+	while guard < 900:
+		guard += 1
+		if mc.phase == MatchController.Phase.VICTORY:
+			victory = true
+			break
+		if mc.phase == MatchController.Phase.DEFEAT:
+			break
+		if mc.phase == MatchController.Phase.FIGHT:
+			if mc.wave_number >= 1 and not waves_seen.has(mc.wave_number):
+				waves_seen.append(mc.wave_number)
+			for e in _alive_enemies():
+				if e.def != null and e.def.category == 1:
+					elite_seen = true
+			if mc.wave_number >= 5 and not boss_seen:
+				for n in get_tree().get_nodes_in_group("boss_unit"):
+					var b := n as BossAct1
+					if b != null and not b.health.is_dead:
+						boss = b
+						boss_seen = true
+			if boss_seen and boss != null and is_instance_valid(boss) and not boss.health.is_dead:
+				if not phases_seen.has(boss.phase_index):
+					phases_seen.append(boss.phase_index)
+				if boss.phase_index == 1:
+					boss.health.take_damage(Units.make_damage(boss.health.max_health * 0.40, null, 1, Vector3.ZERO, 0.0, boss.global_position))
+				elif boss.phase_index == 2:
+					boss.health.take_damage(Units.make_damage(boss.health.max_health * 0.35, null, 1, Vector3.ZERO, 0.0, boss.global_position))
+				elif phases_seen.has(3):
+					_kill_all_enemies() ## босс в фазе 3: добиваем вместе с эскортом
+			else:
+				_kill_all_enemies() ## волны 1-4 и экскорт волны 5 после смерти босса
+		elif mc.phase == MatchController.Phase.INTERMISSION:
+			if prog != null:
+				prog.set_wave_ready(1, true)
+		await _frames(4)
+	_check(victory, "Акт I: матч дошёл до ПОБЕДЫ через все волны")
+	_check(waves_seen == [1, 2, 3, 4, 5], "Акт I: волны прошли последовательно 1..5 (%s)" % str(waves_seen))
+	_check(elite_seen, "Акт I: элитные противники встречались в волнах")
+	_check(boss_seen, "Акт I: босс появился на финальной волне")
+	_check(phases_seen.has(2) and phases_seen.has(3), "Акт I: босс сменил фазы 2 и 3 по порогам HP (%s)" % str(phases_seen))
+	var wm_ok := true
+	for n in get_tree().get_nodes_in_group("match_controller"):
+		pass
+	_check(mc.wave_number == 5 and victory, "Акт I: после босса акт завершён (волна %d, победа %s)" % [mc.wave_number, str(victory)])
+	## После финала: покупки отклоняются, новые враги не спавнятся.
+	await _seconds(1.5)
+	var buy_blocked := prog == null or prog.try_buy(1, &"potion_small") == false
+	var no_new_foes := _alive_enemies().is_empty()
+	_check(buy_blocked and no_new_foes, "Акт I: после финала покупки и спавн врагов заблокированы")
