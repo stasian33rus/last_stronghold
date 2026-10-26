@@ -28,6 +28,7 @@ func _run() -> void:
 	await _test_defeat_and_down_flow()
 	await _test_rescue_flow()
 	await _test_physics_flow()
+	await _test_env_flow()
 	print("[SMOKE] === ИТОГ: проверок %d, провалов %d ===" % [_checks, _failures.size()])
 	for f in _failures:
 		print("[SMOKE] FAILED: %s" % f)
@@ -1575,3 +1576,128 @@ func _test_physics_flow() -> void:
 			e.health.take_damage(Units.make_damage(99999.0, null, 0, Vector3.ZERO, 0.0, e.global_position))
 	await _frames(4)
 	_check(true, "Физика: пробные враги убраны")
+
+## Этап 4.3: разрушаемые объекты и боевые ловушки (offline, сервер).
+func _test_env_flow() -> void:
+	var crate: DestructibleProp = null
+	for n in get_tree().get_nodes_in_group("destructibles"):
+		crate = n as DestructibleProp
+		if crate != null:
+			break
+	var trap: PulseTrap = null
+	for n in get_tree().get_nodes_in_group("traps"):
+		trap = n as PulseTrap
+		if trap != null:
+			break
+	if crate == null or trap == null:
+		_check(false, "Окружение: ящик и ловушка размещены на арене")
+		return
+	_check(true, "Окружение: ящик и ловушка размещены на арене")
+	var arena := get_tree().current_scene
+	var bdef := load("res://resources/enemies/brute.tres") as EnemyDefinition
+	var fdef := load("res://resources/enemies/fop.tres") as EnemyDefinition
+	var spawned: Array = []
+	var spawn_foe := func(def: EnemyDefinition, pos: Vector3) -> EnemyBase:
+		var e: EnemyBase = arena.spawn_enemy(def, pos)
+		if e != null:
+			spawned.append(e)
+		return e
+
+	## 1. Прочность, урон и однократное разрушение.
+	var hp0 := crate.health.health
+	crate.health.take_damage(Units.make_damage(20.0, null, 1, Vector3.ZERO, 0.0, crate.global_position))
+	var damaged := crate.health.health < hp0
+	crate.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, crate.global_position))
+	await _frames(2)
+	_check(damaged and crate.is_destroyed and crate.collision_layer == 0 and crate.visuals.visible == false,
+			"Окружение: ящик теряет прочность и разрушается однократно (collision off, визуал скрыт)")
+
+	## 2. Награда строго один раз.
+	var prog := _prog()
+	var st1: ProgressionState = prog.states.get(1) if prog != null else null
+	var coins_got := 0
+	if st1 != null:
+		coins_got = st1.coins
+	crate.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, crate.global_position))
+	await _frames(2)
+	var coins_after := st1.coins if st1 != null else 0
+	_check(st1 != null and coins_after == coins_got,
+			"Окружение: повторные попадания после разрушения не дают повторных наград")
+
+	## 3. Ловушка: порядок состояний IDLE->WARN->ACTIVE->COOLDOWN.
+	trap.interval = 0.8
+	trap.warn_time = 0.4
+	trap.active_time = 0.35
+	trap.cooldown_time = 0.5
+	trap.damage = 5.0
+	var seq: Array = []
+	var cb := func(st: int) -> void: seq.append(st)
+	trap.state_changed_on_peer.connect(cb)
+	var ordered: bool = await _wait_until(func(): return seq.has(1) and seq.has(2) and seq.has(3), 6.0)
+	var i_w := seq.find(1)
+	var i_a := seq.find(2)
+	var i_c := seq.find(3)
+	_check(ordered and i_w < i_a and i_a < i_c,
+			"Окружение: ловушка проходит WARN->ACTIVE->COOLDOWN в порядке (%s)" % str(seq.slice(0, 6)))
+
+	## 4+5. Урон не чаще раза за активацию; граница зоны.
+	var in_foe: EnemyBase = spawn_foe.call(bdef, trap.global_position)
+	var out_foe: EnemyBase = spawn_foe.call(fdef, trap.global_position + Vector3(2.7, 0.0, 0.0))
+	var edge_foe: EnemyBase = spawn_foe.call(fdef, trap.global_position + Vector3(1.7, 0.0, 0.0))
+	await _frames(3)
+	trap.knockback_force = 0.0 ## цели держим в зоне: стаггер-цикл теста
+	var keep_stun := func() -> void:
+		for e in [in_foe, out_foe, edge_foe]:
+			if is_instance_valid(e) and not e.health.is_dead:
+				e.apply_external_stun(1.2)
+	keep_stun.call()
+	var reached_active: bool = await _wait_until(func():
+		keep_stun.call()
+		return trap.state == 2, 6.0)
+	var hp_in := in_foe.health.health if in_foe != null else 0.0
+	var hp_out := out_foe.health.health if out_foe != null else 0.0
+	var hp_edge := edge_foe.health.health if edge_foe != null else 0.0
+	await _wait_until(func():
+		keep_stun.call()
+		return trap.state == 3, 3.0)
+	var d_in := hp_in - (in_foe.health.health if is_instance_valid(in_foe) else hp_in)
+	var d_out := hp_out - (out_foe.health.health if is_instance_valid(out_foe) else hp_out)
+	var d_edge := hp_edge - (edge_foe.health.health if is_instance_valid(edge_foe) else hp_edge)
+	_check(reached_active and absf(d_in - trap.damage) < 0.01 and absf(d_edge - trap.damage) < 0.01 and d_out < 0.001,
+			"Окружение: ловушка бьёт раз за активацию и только в зоне (в %.0f, край %.0f, вне %.0f)" % [d_in, d_edge, d_out])
+	## Базу HP берём в COOLDOWN (до второй активации), меряем после её завершения.
+	var hp_in2 := in_foe.health.health if is_instance_valid(in_foe) else 0.0
+	var second: bool = await _wait_until(func():
+		keep_stun.call()
+		return trap.state == 2, 6.0)
+	await _wait_until(func():
+		keep_stun.call()
+		return trap.state == 3, 3.0)
+	var d_in2 := hp_in2 - (in_foe.health.health if is_instance_valid(in_foe) else hp_in2)
+	_check(second and absf(d_in2 - trap.damage) < 0.01,
+			"Окружение: вторая активация снова бьёт ровно один раз (%.0f)" % d_in2)
+	trap.state_changed_on_peer.disconnect(cb)
+	for e in [in_foe, out_foe, edge_foe]:
+		if is_instance_valid(e) and not e.health.is_dead:
+			e.health.take_damage(Units.make_damage(99999.0, null, 0, Vector3.ZERO, 0.0, e.global_position))
+	await _frames(3)
+
+	## 6. Обломки очищаются.
+	var debris_now := get_tree().get_nodes_in_group("debris").size()
+	var cleaned: bool = await _wait_until(func(): return get_tree().get_nodes_in_group("debris").size() == 0, 5.0)
+	_check(cleaned, "Окружение: обломки убраны после времени жизни (было %d)" % debris_now)
+
+	## 10. Повторный матч: окружение свежее.
+	Game.start_offline_match(&"berserk", "Энва-2")
+	await _frames(4)
+	var fresh := true
+	for n in get_tree().get_nodes_in_group("destructibles"):
+		var d := n as DestructibleProp
+		if d != null and d.is_destroyed:
+			fresh = false
+	for n in get_tree().get_nodes_in_group("traps"):
+		var t := n as PulseTrap
+		if t != null and t.state != 0:
+			fresh = false
+	_check(fresh and get_tree().get_nodes_in_group("debris").size() == 0,
+			"Окружение: повторный матч не оставляет разрушений/обломков/состояний ловушек")

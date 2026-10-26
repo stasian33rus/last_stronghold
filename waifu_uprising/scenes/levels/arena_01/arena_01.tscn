@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
 [ext_resource type="Script" path="res://scripts/progression/progression_system.gd" id="6_prog"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/crate_destructible.tscn" id="7_crate"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/pulse_trap.tscn" id="8_trap"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.03, 0.02, 0.08, 1)
@@ -600,3 +601,27 @@ script = ExtResource("3_match")
 script = ExtResource("6_prog")
 
 [node name="HUD" parent="." instance=ExtResource("5_hud")]
+
+[node name="CrateSide1" parent="." instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, 4)
+
+[node name="CrateSide2" parent="." instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, 4)
+
+[node name="CrateSide3" parent="." instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, -8)
+
+[node name="CrateSide4" parent="." instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, -8)
+
+[node name="PulseTrap1" parent="." instance=ExtResource("8_trap")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 0, -7)
+start_offset = 0.0
+
+[node name="PulseTrap2" parent="." instance=ExtResource("8_trap")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 0, -7)
+start_offset = 2.5
+
+[node name="PulseTrap3" parent="." instance=ExtResource("8_trap")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -14)
+start_offset = 4.5

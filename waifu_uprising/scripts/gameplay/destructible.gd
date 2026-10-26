@@ -108,10 +108,14 @@ func fx_destroy() -> void:
 	_spawn_debris()
 
 ## Локальные обломки: неавторитетная физика, ограниченное число, короткая жизнь.
+const DEBRIS_GLOBAL_CAP: int = 32 ## глобальный предел физических обломков в сцене
+
 func _spawn_debris() -> void:
 	if visuals == null:
 		return
-	for i in debris_count:
+	var free_slots := maxi(0, DEBRIS_GLOBAL_CAP - get_tree().get_nodes_in_group("debris").size())
+	var count := mini(debris_count, free_slots)
+	for i in count:
 		var piece := RigidBody3D.new()
 		piece.collision_layer = 0
 		piece.collision_mask = 1

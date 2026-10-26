@@ -54,6 +54,11 @@ var _rsc_t := 0.0
 var _rsc_holding := false
 var _rsc_hold_sent := false
 var _rsc_reedge_done := false
+## Ловушки/разрушения (+trap=1): синхронность состояний между пирами.
+var _trap_conn := false
+var _trap_seq: Array = []
+var _tr_step := 0
+var _tr_t := 0.0
 var _rsc_progress_seen := false
 var _rsc_revived_hp := -1.0
 
@@ -107,6 +112,7 @@ func _physics_process(delta: float) -> void:
 			_drive_pawn(delta)
 			_handle_progression(delta)
 			_handle_rescue_test(delta)
+			_handle_trap_test(delta)
 			_check_sync()
 
 func _set_phase(p: String) -> void:
@@ -532,3 +538,59 @@ func _rsc_wait_cleaned() -> void:
 		_finish(false, "rescue: revived hp mismatch on host")
 	else:
 		_finish(cleaned, "rescue host scenario verified")
+
+## Сценарий синхронизации окружения (Этап 4.3): сервер разрушает ящик,
+## ловушка циклит состояния; оба пира обязаны увидеть одно и то же.
+func _handle_trap_test(delta: float) -> void:
+	if not Game.autotest_trap or _match_done:
+		return
+	if _mc == null or _mc.phase != MatchController.Phase.FIGHT:
+		return
+	_tr_t += delta
+	if not _trap_conn:
+		for n in get_tree().get_nodes_in_group("traps"):
+			var t := n as PulseTrap
+			if t != null:
+				t.state_changed_on_peer.connect(func(st: int) -> void: _trap_seq.append(st))
+				_trap_conn = true
+				break
+		if not _trap_conn:
+			return
+	var crate: DestructibleProp = null
+	for n in get_tree().get_nodes_in_group("destructibles"):
+		crate = n as DestructibleProp
+		if crate != null:
+			break
+	if crate == null:
+		return
+	match mode:
+		"host":
+			match _tr_step:
+				0:
+					if _tr_t < 2.0:
+						return
+					crate.health.take_damage(Units.make_damage(99999.0, null, 1, Vector3.ZERO, 0.0, crate.global_position))
+					print("[AUTOTEST] trap: хост разрушил ящик (серверное уничтожение)")
+					_tr_step = 1
+					_tr_t = 0.0
+				1:
+					if crate.is_destroyed and _trap_seq.has(2):
+						print("[AUTOTEST] TRAP_STATES host=%s crate_destroyed=1" % str(_trap_seq))
+						_finish(true, "trap host scenario verified")
+					elif _tr_t > 40.0:
+						_finish(false, "trap: host saw no ACTIVE state")
+		"client":
+			match _tr_step:
+				0:
+					if crate.visuals.visible == false:
+						print("[AUTOTEST] CRATE_SYNC client destroyed_seen=true")
+						_tr_step = 1
+						_tr_t = 0.0
+					elif _tr_t > 40.0:
+						_finish(false, "trap: client never saw crate destroyed")
+				1:
+					if _trap_seq.has(2):
+						print("[AUTOTEST] TRAP_STATES client=%s" % str(_trap_seq))
+						_finish(true, "trap client scenario verified")
+					elif _tr_t > 40.0:
+						_finish(false, "trap: client saw no ACTIVE state")

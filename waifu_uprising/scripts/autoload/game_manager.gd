@@ -27,6 +27,7 @@ var autotest_started: bool = false
 var autotest_rematch: bool = false
 var autotest_evolve: bool = false
 var autotest_rescue: bool = false
+var autotest_trap: bool = false
 var dedicated_mode: bool = false
 var dedicated_port: int = Net.DEFAULT_PORT
 
@@ -59,6 +60,8 @@ func _parse_cmdline() -> void:
 			autotest_evolve = true
 		elif a == "rescue=1" or a == "rescue":
 			autotest_rescue = true
+		elif a == "trap=1" or a == "trap":
+			autotest_trap = true
 		elif a.begins_with("ip="):
 			autotest_ip = a.trim_prefix("ip=")
 		elif a == "fast=1" or a == "fast":
